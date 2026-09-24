@@ -1,0 +1,53 @@
+# NetSentinel 本地依赖服务编排。
+#
+# 当前只包含"外部依赖"（Postgres / Redis），应用本身（api / worker / web）
+# 留到 Task 21 再接入 —— 开发阶段应用跑在宿主机上，热重载更快。
+#
+# 用法：
+#   docker compose up -d db redis      启动
+#   docker compose ps                  查看健康状态
+#   docker compose down                停止（保留数据）
+#   docker compose down -v             停止并删除数据卷
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: netsentinel-db
+    restart: unless-stopped
+    environment:
+      # 注意：这里是**本地开发用**的弱口令，与生产无关。
+      # 生产环境的口令必须来自环境变量/密钥管理，不能写死。
+      POSTGRES_USER: netsentinel
+      POSTGRES_PASSWORD: netsentinel
+      POSTGRES_DB: netsentinel
+    ports:
+      # 暴露到宿主机，方便本地 psql / GUI 客户端连接
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready 是 Postgres 自带的探测命令。
+      # 没有 healthcheck 的话，`depends_on` 只能判断"容器启动"，
+      # 不能判断"数据库真的能连" —— 应用会偶发启动失败。
+      test: ["CMD-SHELL", "pg_isready -U netsentinel -d netsentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: netsentinel-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+# 命名卷：数据存在 Docker 管理的位置，
+# 这样 `docker compose down`（不带 -v）不会丢数据。
+volumes:
+  pgdata:

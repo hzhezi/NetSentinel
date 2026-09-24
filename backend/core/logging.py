@@ -37,7 +37,7 @@ def setup_logging(level: str = "INFO") -> None:
     # ── 2. 配置 structlog 的处理链 ─────────────────────────────
     structlog.configure(
         processors=[
-            # 合并 contextvars 里的上下文（如 request_id），
+            # 合并 contextvars 里的上下文（如 requ  est_id），
             # 实现"一次绑定的字段自动出现在后续每条日志里"
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
