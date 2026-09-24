@@ -1,0 +1,140 @@
+# AGENTS.md — NetSentinel 项目约定
+
+本文件是本项目的**强制约定**，任何 AI 助手或协作者在动手前都必须先读。
+它由两部分组成：§1 通用行为准则（跨项目适用）+ §2 NetSentinel 专属约束。
+
+---
+
+## §1 通用行为准则
+
+### 1.1 先想后写，不要闷头写
+- 动手前**显式说明假设**；不确定就问，不要猜。
+- 存在多种理解时**列出来让用户选**，不要默默挑一个。
+- 有更简单的方案，直接说，该反驳就反驳。
+- 遇到不清楚的地方**停下来**，说清哪里困惑，然后再问。
+
+### 1.2 简单优先，杜绝过度设计
+- **解决问题的最小代码**，不写投机性功能。
+- 不为一次性代码造抽象。
+- 不做没被要求的"灵活性"和"可配置性"。
+- 不为不可能发生的场景写错误处理。
+- 自问："资深工程师会觉得这过度设计了吗？" 如果是，就简化。
+
+### 1.3 外科手术式修改
+- **只动必须动的地方**，不顺手动旁边代码、注释、格式。
+- 不重构没坏的东西。
+- 匹配现有风格，即使你会写得不一样。
+- 发现无关的死代码 → **提一句，不要删**。
+- 你的改动产生了孤儿代码（无用的 import / 变量 / 函数）→ 清理掉。
+- 检验标准：**每一行改动都能直接追溯到用户的请求**。
+
+### 1.4 目标驱动的执行
+把任务转成可验证的目标，然后循环到验证通过：
+- "加校验" → 先写非法输入测试，再让它通过
+- "修 bug" → 先写复现测试，再让它通过
+- "重构 X" → 前后都要跑通测试
+
+多步任务先给简明计划：
+```
+1. [步骤] → 验证：[怎么查]
+2. [步骤] → 验证：[怎么查]
+```
+
+### 1.5 沟通与命名
+- **日常对话、解释说明用中文**。
+- **技术术语、报错信息、日志用英文**（如 callback、middleware、race condition）。
+- **变量名、接口名用英文**，简洁清晰。
+- 文件保持精简，不写冗余内容。
+- 接口边界清晰，职责单一。
+
+### 1.6 安全
+- **密码不硬编码进源码。**
+- **API-KEY 不进源码。**
+- **`.env` 不提交仓库**（必须写入 `.gitignore`）。
+- 提交 `.env.example` 作为模板：包含所有必需变量名，**不含实际值**。
+
+### 1.7 代码注释
+- **写代码时带清晰注释**，尤其是"为什么这么做"而非"做了什么"。
+- 关键决策、非显然的写法、踩过的坑，都要注释说明。
+- 不要写废话注释（如 `i += 1  # 自增`）。
+
+---
+
+## §2 NetSentinel 专属约束
+
+### 2.1 项目定位（不可跑偏）
+> **准实时 NIDS 检测与研判平台**：双引擎检测（Suricata 规则 + ML 异常检测）+ LangGraph 多智能体 LLM 研判 + Web 可视化。
+
+- 交付形式：硕士专业实践（实践报告 + 现场答辩演示，各约 50%）
+- 完整设计：`docs/plans/2026-09-24-NetSentinel-design.md`
+- 期 1 实施计划：`docs/plans/2026-09-24-NetSentinel-phase1-implementation.md`
+
+### 2.2 明确不做（防止范围蔓延）
+- ❌ 真实网卡实时抓包（架构预留接口，不实现）
+- ❌ IPS 串联阻断 / 自动防火墙联动
+- ❌ 特征级真正融合（两引擎在**告警层**统一，非特征层）
+- ❌ 多租户、OAuth、Kafka、K8s、微服务拆分
+- ❌ 规则热更新与在线学习
+
+### 2.3 技术栈（已定，不要擅自更换）
+| 层 | 选型 |
+|---|---|
+| 后端 | Python 3.13 · **FastAPI** · Pydantic v2 · SQLAlchemy 2.0(async) · Alembic |
+| 前端 | React 18 + TypeScript + Vite + Ant Design + TanStack Query + Zustand |
+| 存储 | PostgreSQL 16 + Redis 7 |
+| 检测 | Suricata 7（Docker）+ scikit-learn / XGBoost |
+| 研判 | **LangGraph**（自定义节点，不用 `create_react_agent` 黑盒）+ DeepSeek API |
+| 日志 | structlog（结构化 JSON）|
+| 测试 | pytest（后端）· Vitest（前端）· Playwright（E2E）|
+
+**已否决的选项**（有理由，别重提）：Django、Flask、Spring Boot（ML/LLM 生态在 Python，跨语言微服务是徒增复杂度）、Kafka、K8s。
+
+### 2.4 架构约定
+- **分层**：`api/`（路由，零业务逻辑）→ `services/`（领域逻辑）→ `repositories/`（数据访问）→ `models/`（ORM）
+- **依赖方向单向**：上层可依赖下层，**下层不得反向依赖上层**。
+- **LangGraph 只出现在研判层**，检测层/存储层/展示层与它解耦。
+- 两引擎输出统一为 **UnifiedAlert**，下游管道完全一致。
+
+### 2.5 LLM 研判铁律（防幻觉）
+- 只引用告警或工具结果中的证据；**查不到视为"未知"，而非"安全"**。
+- `needs_human_review` 是**一等结论**，不是失败。
+- **不得凭记忆写 MITRE 编号**，必须经 `lookup_mitre_technique` 查表。
+- 严重度用自己的判断，不直接抄检测层上报值。
+- 输出必须**强制结构化**（Pydantic 校验），不合法则重试。
+
+### 2.6 开源借鉴与 License（关键，涉及知识产权）
+| 来源 | License | 处理 |
+|---|---|---|
+| IntruShield NIDS | MIT | 可借鉴代码，**注明来源** |
+| alert-triage-copilot | MIT | 可借鉴代码，**注明来源** |
+| Watcher IDS | **AGPL-3.0** | **只借鉴设计，绝不复制代码** |
+
+- 本项目自身 License：**MIT**
+- 若申请软著或发论文，**所有借鉴点必须重写实现**并做来源切割说明。
+
+### 2.7 开发流程
+- **TDD**：先写失败测试 → 运行确认失败 → 最小实现 → 确认通过 → 提交。**不允许先实现后补测试**。
+- **频繁提交**：每个 Task 一次提交，提交信息用中文、语义化前缀（`feat:` / `fix:` / `chore:` / `docs:`）。
+- 分支：从 `main` 开 `feat/phase-1`，阶段结束再合并。
+- **不要主动 commit / push**，除非用户明确要求。
+- 提交前必须全绿：`uv run pytest` · `uv run ruff check .` · `uv run mypy backend`
+
+### 2.8 常用命令
+```bash
+uv sync                                    # 安装依赖
+uv run pytest -v                           # 全部测试
+uv run pytest tests/x/test_y.py::test_z -v # 单测
+uv run ruff check . && uv run ruff format .
+uv run mypy backend
+docker compose up -d db redis              # 起本地 Postgres + Redis
+uv run alembic upgrade head                # 应用迁移
+uv run uvicorn backend.main:app --reload   # 起后端
+```
+
+### 2.9 环境注意事项（本机实测）
+- **Python 3.13.3**（用 `.python-version` 固定；计划文档写的 3.12 已作废）
+- **uv 全局源 `pypi.tuna.tsinghua.edu.cn` 返回 403 已失效** → 项目级 `uv.toml` 已指向阿里云源，**不要删**。
+- **GitHub HTTPS 被墙**；SSH 可用。git remote 用 `git@github.com:hzhezi/NetSentinel.git`。
+- 本机 git 身份：`hzhezi` / `102033289+hzhezi@users.noreply.github.com`（全局已设）。
+- Docker Desktop 需要**手动启动**守护进程后才可用。
+- 数据集（`data/`）与模型（`models/`）**不入库**，已在 `.gitignore`。
