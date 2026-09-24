@@ -1,0 +1,20 @@
+# 本地 hook：不依赖 GitHub 拉取仓库，直接用项目环境里的工具。
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: uv run mypy backend
+        language: system
+        pass_filenames: false
+        types: [python]
