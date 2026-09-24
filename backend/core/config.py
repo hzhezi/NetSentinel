@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # ── LLM ─────────────────────────────────────────────────
     # 默认空字符串：没配 key 时程序仍能启动（便于跑测试），真正调用时再校验
-    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = "sk-29b1ac12c3c0475da1b3fd19364a4cce"
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     TRIAGE_MODEL: str = "deepseek-chat"  # L1 分诊用便宜快模型
     INVESTIGATION_MODEL: str = "deepseek-reasoner"  # L2 深度调查用强推理模型
