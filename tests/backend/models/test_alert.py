@@ -1,36 +1,16 @@
 """UnifiedAlert ORM 模型的测试。
 
-用内存 SQLite 跑真实插入，验证：
-- 字段类型与默认值
-- 枚举字段的约束行为
-- 索引是否按预期建立
+**跑在真 PostgreSQL 上**（fixture 见 tests/conftest.py）。
+选真库的理由在这个文件里体现得最明显：raw 字段是 JSONB，
+SQLite 根本渲染不了 —— 想测它就必须用 PG。
 """
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import select, text
 
-from backend.core.database import Base
 from backend.models.alert import Alert
-
-
-@pytest.fixture
-async def session():
-    """内存 SQLite + 建表。
-
-    注意：SQLite 不支持 Postgres 的 JSONB，SQLAlchemy 会自动降级为 JSON。
-    因此这里测的是**字段与行为**，不是 *Postgres 特有类型*。
-    真正在 PG 上的行为在 Task 5 迁移后验证。
-    """
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as s:
-        yield s
-    await engine.dispose()
 
 
 def _make_alert(**overrides):
@@ -48,95 +28,127 @@ def _make_alert(**overrides):
     return Alert(**data)
 
 
-async def test_insert_and_read_back(session):
-    """最基本的往返：写入后用相同 id 能读回来。"""
+async def test_insert_and_read_back(pg_session):
+    """最基本的往返：写入后按 id 能读回来。"""
     alert = _make_alert()
-    session.add(alert)
-    await session.commit()
+    pg_session.add(alert)
+    await pg_session.commit()
 
-    found = await session.get(Alert, alert.id)
+    found = await pg_session.get(Alert, alert.id)
     assert found is not None
     assert found.signature == "DDoS"
     assert found.src_ip == "45.33.32.156"
     assert found.confidence == pytest.approx(0.93)
 
 
-async def test_status_defaults_to_new(session):
+async def test_status_defaults_to_new(pg_session):
     """新告警的初始流转状态应为 new。"""
     alert = _make_alert()
-    session.add(alert)
-    await session.commit()
+    pg_session.add(alert)
+    await pg_session.commit()
 
     assert alert.status == "new"
 
 
-async def test_optional_fields_can_be_none(session):
+async def test_optional_fields_can_be_none(pg_session):
     """端口、协议、原始载荷等是可选字段，允许为空。"""
     alert = _make_alert(src_port=None, dst_port=None, protocol=None, raw=None)
-    session.add(alert)
-    await session.commit()
+    pg_session.add(alert)
+    await pg_session.commit()
 
     assert alert.src_port is None
     assert alert.raw is None
 
 
-async def test_raw_payload_roundtrip(session):
+async def test_raw_payload_roundtrip(pg_session):
     """raw 字段要能存嵌套 dict（原始 eve/flow 记录）。"""
     payload = {"event_type": "alert", "alert": {"signature_id": 1000001, "rev": 1}}
     alert = _make_alert(raw=payload)
-    session.add(alert)
-    await session.commit()
+    pg_session.add(alert)
+    await pg_session.commit()
 
-    found = await session.get(Alert, alert.id)
+    found = await pg_session.get(Alert, alert.id)
     assert found.raw == payload
 
 
-async def test_detected_at_is_stored_as_given(session):
+async def test_jsonb_supports_field_query(pg_session):
+    """JSONB 的核心价值：能用 -> 运算符**按字段查询**。
+
+    这条是选真 PG 的直接收益 —— 也就是"为什么值得为 JSONB 放弃 SQLite 替身"。
+    可以在不解析整个 JSON 的前提下，直接查原始记录里的某个字段。
+    """
+    pg_session.add_all([
+        _make_alert(raw={"alert": {"signature_id": 1000001}}, signature="nmap"),
+        _make_alert(raw={"alert": {"signature_id": 1000002}}, signature="sqli"),
+    ])
+    await pg_session.commit()
+
+    # 用原生 SQL 演示 JSONB 的 ->> 取值查询（ORM 层也有对应写法）
+    rows = (await pg_session.execute(text(
+        "SELECT signature FROM alerts "
+        "WHERE raw -> 'alert' ->> 'signature_id' = '1000001'"
+    ))).all()
+    assert [r[0] for r in rows] == ["nmap"]
+
+
+async def test_detected_at_is_stored_as_given(pg_session):
     """detected_at 是**事件原始时间**，必须原样保存，不能被自动覆盖。
 
-    这条防的是常见错误：把 detected_at 也写成 server_default=now()，
-    那样所有告警的时间都会变成入库时间，"按时间重放"就废了。
+    防的是常见错误：把 detected_at 也写成 server_default=now()，
+    那样所有告警时间都变成入库时间，"按时间戳重放"就废了。
     """
     event_time = datetime.now(UTC) - timedelta(hours=2)
     alert = _make_alert(detected_at=event_time)
-    session.add(alert)
-    await session.commit()
+    pg_session.add(alert)
+    await pg_session.commit()
+    await pg_session.refresh(alert)
 
-    found = await session.get(Alert, alert.id)
-    # SQLite 不保留时区信息，比较时忽略 tzinfo，只验证时刻一致
-    assert found.detected_at.replace(tzinfo=None) == event_time.replace(tzinfo=None)
-    # 且不应等于 created_at（created_at 是入库时间，此处相差 2 小时）
-    assert found.created_at is not None
+    assert alert.detected_at == event_time
+    # created_at（入库时间）与 detected_at（事件时间）应相差约 2 小时
+    assert abs((alert.created_at - alert.detected_at).total_seconds() - 7200) < 60
 
 
-async def test_filter_by_severity(session):
-    """severity 上有索引，是仪表盘的主要过滤维度。"""
-    session.add_all([
+async def test_filter_by_severity(pg_session):
+    """severity 上有索引，是仪表盘主要过滤维度。"""
+    pg_session.add_all([
         _make_alert(severity="high", signature="A"),
         _make_alert(severity="low", signature="B"),
     ])
-    await session.commit()
+    await pg_session.commit()
 
-    rows = (await session.scalars(
+    rows = (await pg_session.scalars(
         select(Alert).where(Alert.severity == "high")
     )).all()
     assert len(rows) == 1
     assert rows[0].signature == "A"
 
 
-async def test_order_by_detected_at(session):
+async def test_order_by_detected_at(pg_session):
     """按事件时间排序 —— 重放演示依赖这个顺序。"""
     now = datetime.now(UTC)
-    session.add_all([
+    pg_session.add_all([
         _make_alert(detected_at=now, signature="later"),
         _make_alert(detected_at=now - timedelta(minutes=5), signature="earlier"),
     ])
-    await session.commit()
+    await pg_session.commit()
 
-    rows = (await session.scalars(
+    rows = (await pg_session.scalars(
         select(Alert).order_by(Alert.detected_at.asc())
     )).all()
     assert [r.signature for r in rows] == ["earlier", "later"]
+
+
+async def test_composite_index_is_actually_created_in_postgres(pg_session):
+    """复合索引必须真的建在 PG 里 —— 不只是写在模型里。
+
+    这条只有真 PG 能查：读 pg_indexes 系统表。
+    用 SQLite 测时只能断言"模型里声明了索引名"，那不是同一回事。
+    """
+    rows = (await pg_session.execute(text(
+        "SELECT indexname FROM pg_indexes WHERE tablename = 'alerts'"
+    ))).all()
+    names = {r[0] for r in rows}
+    assert "idx_alerts_detected_severity" in names
 
 
 def test_table_has_expected_columns():
@@ -150,9 +162,3 @@ def test_table_has_expected_columns():
         "category", "raw", "dedup_key", "status", "notes",
     }
     assert expected <= cols
-
-
-def test_composite_index_exists():
-    """时间 + 严重度的复合索引，服务仪表盘的"最近高危告警"查询。"""
-    index_names = {idx.name for idx in Alert.__table__.indexes}
-    assert "idx_alerts_detected_severity" in index_names

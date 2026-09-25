@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, Index, String, Text
+from sqlalchemy import DateTime, Float, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,18 +63,15 @@ class Alert(Base, UUIDMixin, TimestampMixin):
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # ── 原始数据 ────────────────────────────────────────────
-    # 用 JSON 类型，但通过 with_variant 指定"在 Postgres 上实际用 JSONB"。
-    #
-    # 为什么这么绕：
-    #   直接写 JSONB 会让模型**只能跑在 Postgres** —— SQLite 编译器不认识它，
-    #   内存库测试全部报 CompileError（我们已经踩到过）。
-    #   而通用 JSON 在 Postgres 上会退化成 json（文本存储，无 GIN 索引）。
-    #   with_variant 让两边各取所长：测试可移植，生产享 JSONB 的索引与查询能力。
-    #
+    # 用 JSONB（Postgres 二进制 JSON）而非 Text 存 JSON 字符串：
+    #   - 二进制存储，可建 GIN 索引、支持 -> 取值查询
+    #   - 存字符串的话，将来想把某字段加索引就得全表扫描
     # 保留原始记录的目的是可追溯 —— 研判结果可疑时能回看原始证据。
-    raw: Mapped[dict | None] = mapped_column(
-        JSON().with_variant(JSONB, "postgresql"), nullable=True
-    )
+    #
+    # 注意：这里直接写死 JSONB，不做 with_variant 之类的跨库兼容。
+    # 本项目的目标存储就是 Postgres，测试也跑在 Postgres 上（见 tests/conftest.py），
+    # 不需要为了迁就 SQLite 而给生产模型加间接层。
+    raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── 处理状态 ────────────────────────────────────────────
     # 去重键，形如 "45.33.32.156-ET SCAN Nmap OS Detection Probe"。
