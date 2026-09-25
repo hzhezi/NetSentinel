@@ -24,7 +24,19 @@ coverage/
 *.tsbuildinfo
 
 # ── Datasets & large artifacts (never commit) ──────────────────────
-data/
+# 数据本体不入库，但保留各目录下的说明文档（数据来源、下载方式、格式陷阱），
+# 否则换台机器就不知道数据从哪来、怎么重新获取。
+# git 的取消忽略规则要求父目录先不被排除，因此：
+#   1. data/*      排除内容物
+#   2. !data/*/    放行一级子目录
+#   3. 再按**文件类型**排除真实数据（csv/parquet/pcap 等）
+#   4. !README.md  最后放行说明文档
+data/*
+!data/*/
+*.csv
+*.parquet
+*.jsonl
+!data/**/README.md
 datasets/
 logs/
 artifacts/
