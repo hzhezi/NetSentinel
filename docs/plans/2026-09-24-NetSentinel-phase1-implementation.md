@@ -152,9 +152,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_PORT: int = 8000
 
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://netsentinel:netsentinel@localhost:5432/netsentinel"
-    )
+    DATABASE_URL: str = "postgresql+asyncpg://netsentinel:netsentinel@localhost:5432/netsentinel"
     REDIS_URL: str = "redis://localhost:6379/0"
 
     DEEPSEEK_API_KEY: str = ""
@@ -264,9 +262,7 @@ def setup_logging(level: str = "INFO") -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, level)
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, level)),
     )
 ```
 
@@ -446,14 +442,10 @@ class Alert(Base, UUIDMixin, TimestampMixin):
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     dedup_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="new", index=True
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="new", index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    __table_args__ = (
-        Index("idx_alerts_detected_severity", "detected_at", "severity"),
-    )
+    __table_args__ = (Index("idx_alerts_detected_severity", "detected_at", "severity"),)
 ```
 
 ```python
@@ -636,9 +628,13 @@ async def test_create_and_list(session):
     from datetime import UTC, datetime
 
     obj = AlertCreate(
-        source_engine="ml", detected_at=datetime.now(UTC),
-        src_ip="1.1.1.1", dst_ip="2.2.2.2", signature="DDoS",
-        severity="high", confidence=0.9,
+        source_engine="ml",
+        detected_at=datetime.now(UTC),
+        src_ip="1.1.1.1",
+        dst_ip="2.2.2.2",
+        signature="DDoS",
+        severity="high",
+        confidence=0.9,
     )
     created = await repo.create(session, obj)
     assert created.id is not None
@@ -690,9 +686,7 @@ async def list(
         stmt = stmt.where(Alert.source_engine == source_engine)
     if q:
         stmt = stmt.where(Alert.signature.ilike(f"%{q}%"))
-    total = await session.scalar(
-        select(func.count()).select_from(stmt.subquery())
-    )
+    total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
     stmt = stmt.order_by(Alert.detected_at.desc()).offset((page - 1) * size).limit(size)
     rows = (await session.scalars(stmt)).all()
     return list(rows), int(total or 0)
@@ -731,9 +725,15 @@ def test_normalize_maps_severity():
     from backend.services.alert_service import normalize_alert
 
     out = normalize_alert(
-        {"src_ip": "1.1.1.1", "dst_ip": "2.2.2.2", "signature": "X",
-         "severity": "high", "confidence": 0.5, "source_engine": "ml",
-         "detected_at": None}
+        {
+            "src_ip": "1.1.1.1",
+            "dst_ip": "2.2.2.2",
+            "signature": "X",
+            "severity": "high",
+            "confidence": 0.5,
+            "source_engine": "ml",
+            "detected_at": None,
+        }
     )
     assert out["severity"] == "high"
 ```
@@ -809,11 +809,14 @@ def test_pick_attack_sample_returns_rows():
     from scripts.prepare_data import split_and_sample
 
     import pandas as pd
-    df = pd.DataFrame({
-        " Label": ["BENIGN", "DDoS", "BENIGN"],
-        "Destination Port": [80, 80, 443],
-        "Flow Duration": [1, 2, 3],
-    })
+
+    df = pd.DataFrame(
+        {
+            " Label": ["BENIGN", "DDoS", "BENIGN"],
+            "Destination Port": [80, 80, 443],
+            "Flow Duration": [1, 2, 3],
+        }
+    )
     normal, attack = split_and_sample(df, n=1)
     assert len(normal) == 1 and len(attack) == 1
 ```
@@ -898,12 +901,14 @@ from xgboost import XGBClassifier
 
 
 def train_binary(X, y) -> tuple[XGBClassifier, dict]:
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
-    )
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
     model = XGBClassifier(
-        n_estimators=300, max_depth=6, learning_rate=0.1,
-        subsample=0.9, eval_metric="logloss", n_jobs=-1,
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.9,
+        eval_metric="logloss",
+        n_jobs=-1,
     )
     model.fit(X_tr, y_tr)
     pred = model.predict(X_te)
@@ -947,9 +952,11 @@ def test_predictor_returns_prediction(tmp_path):
     from backend.detection.ml.predictor import MLPredictor
 
     rng = np.random.default_rng(0)
-    X = rng.random((200, 5)); y = (X[:, 0] > 0.5).astype(int)
+    X = rng.random((200, 5))
+    y = (X[:, 0] > 0.5).astype(int)
     model, _ = train_binary(X, y)
-    path = tmp_path / "m.joblib"; joblib.dump(model, path)
+    path = tmp_path / "m.joblib"
+    joblib.dump(model, path)
 
     p = MLPredictor(path, feature_names=[f"f{i}" for i in range(5)])
     r = p.predict({"f0": 0.9, "f1": 0.1, "f2": 0.1, "f3": 0.1, "f4": 0.1})
@@ -1014,12 +1021,15 @@ async def test_feeder_emits_in_time_order(tmp_path):
     import pandas as pd
     from backend.detection.feeders.csv_feeder import CsvFeeder
 
-    df = pd.DataFrame({
-        "Timestamp": ["2017-07-05 10:00:00", "2017-07-05 10:00:01",
-                      "2017-07-05 10:00:02"],
-        "src_ip": ["1.1.1.1"] * 3, "Label": ["BENIGN", "DDoS", "BENIGN"],
-    })
-    p = tmp_path / "s.csv"; df.to_csv(p, index=False)
+    df = pd.DataFrame(
+        {
+            "Timestamp": ["2017-07-05 10:00:00", "2017-07-05 10:00:01", "2017-07-05 10:00:02"],
+            "src_ip": ["1.1.1.1"] * 3,
+            "Label": ["BENIGN", "DDoS", "BENIGN"],
+        }
+    )
+    p = tmp_path / "s.csv"
+    df.to_csv(p, index=False)
 
     feeder = CsvFeeder(p, speed=1000.0, max_delay=0.001)
     rows = [r async for r in feeder.stream()]
@@ -1092,11 +1102,18 @@ git commit -am "feat: 添加 CsvFeeder 准实时重放"
 def test_triage_result_schema():
     from backend.schemas.triage import TriageResult
 
-    r = TriageResult.model_validate({
-        "verdict": "true_positive", "severity": "high", "confidence": 80,
-        "escalate": True, "attack_type": "Scan", "summary": "s",
-        "mitre_techniques": ["T1046"], "recommended_actions": ["block"],
-    })
+    r = TriageResult.model_validate(
+        {
+            "verdict": "true_positive",
+            "severity": "high",
+            "confidence": 80,
+            "escalate": True,
+            "attack_type": "Scan",
+            "summary": "s",
+            "mitre_techniques": ["T1046"],
+            "recommended_actions": ["block"],
+        }
+    )
     assert r.escalate is True
 
 
@@ -1104,7 +1121,13 @@ def test_client_parses_json_response(monkeypatch):
     from backend.agents.llm_client import LLMClient
 
     client = LLMClient(api_key="x", base_url="http://x", model="m")
-    monkeypatch.setattr(client, "_raw_call", lambda *a, **k: '{"verdict": "false_positive", "severity": "low", "confidence": 90, "escalate": false, "attack_type": null, "summary": "fp", "mitre_techniques": [], "recommended_actions": []}')
+    monkeypatch.setattr(
+        client,
+        "_raw_call",
+        lambda *a, **k: (
+            '{"verdict": "false_positive", "severity": "low", "confidence": 90, "escalate": false, "attack_type": null, "summary": "fp", "mitre_techniques": [], "recommended_actions": []}'
+        ),
+    )
     r = client.triage({"signature": "X"})
     assert r.verdict == "false_positive"
 ```
@@ -1337,12 +1360,18 @@ async def list_alerts(
     session: AsyncSession = Depends(get_session),
 ):
     items, total = await repo.list(
-        session, page=page, size=size,
-        severity=severity, source_engine=source_engine, q=q,
+        session,
+        page=page,
+        size=size,
+        severity=severity,
+        source_engine=source_engine,
+        q=q,
     )
     return AlertPage(
         items=[AlertResponse.model_validate(i) for i in items],
-        total=total, page=page, size=size,
+        total=total,
+        page=page,
+        size=size,
     )
 
 
@@ -1420,8 +1449,11 @@ async def test_broadcast_to_connections():
     from backend.api.websocket.manager import WebSocketManager
 
     class FakeWS:
-        def __init__(self): self.sent = []
-        async def send_text(self, t): self.sent.append(t)
+        def __init__(self):
+            self.sent = []
+
+        async def send_text(self, t):
+            self.sent.append(t)
 
     m = WebSocketManager()
     ws = FakeWS()
@@ -1529,7 +1561,8 @@ async def test_replay_publishes_alerts(monkeypatch):
 
     published = []
 
-    async def fake_broadcast(msg): published.append(msg)
+    async def fake_broadcast(msg):
+        published.append(msg)
 
     monkeypatch.setattr("backend.api.websocket.manager.ws_manager.broadcast", fake_broadcast)
     monkeypatch.setattr("backend.workers.replay.build_triage_graph", lambda **k: _FakeGraph())
@@ -1551,9 +1584,17 @@ async def test_replay_publishes_alerts(monkeypatch):
 
 ```python
 # backend/workers/replay.py（骨架）
-async def run_replay(csv_path: str, *, speed: float = 1.0, model_path: str,
-                     feature_names: list[str], llm, session_factory,
-                     pipeline=None, on_alert=None) -> dict:
+async def run_replay(
+    csv_path: str,
+    *,
+    speed: float = 1.0,
+    model_path: str,
+    feature_names: list[str],
+    llm,
+    session_factory,
+    pipeline=None,
+    on_alert=None,
+) -> dict:
     from backend.detection.feeders.csv_feeder import CsvFeeder
     from backend.detection.ml.predictor import MLPredictor
     from backend.repositories import alert_repository as repo
@@ -1569,18 +1610,20 @@ async def run_replay(csv_path: str, *, speed: float = 1.0, model_path: str,
         pred = predictor.predict(row)
         if pred.label != 1:
             continue
-        alert = normalize_alert({
-            "source_engine": "ml",
-            "detected_at": None,
-            "src_ip": row.get("Source IP", "0.0.0.0"),
-            "dst_ip": row.get("Destination IP", "0.0.0.0"),
-            "protocol": "TCP",
-            "signature": row.get("Label", "ATTACK"),
-            "attack_type": row.get("Label"),
-            "severity": "high" if pred.confidence >= 0.9 else "medium",
-            "confidence": pred.confidence,
-            "raw": row,
-        })
+        alert = normalize_alert(
+            {
+                "source_engine": "ml",
+                "detected_at": None,
+                "src_ip": row.get("Source IP", "0.0.0.0"),
+                "dst_ip": row.get("Destination IP", "0.0.0.0"),
+                "protocol": "TCP",
+                "signature": row.get("Label", "ATTACK"),
+                "attack_type": row.get("Label"),
+                "severity": "high" if pred.confidence >= 0.9 else "medium",
+                "confidence": pred.confidence,
+                "raw": row,
+            }
+        )
         if pipeline.is_duplicate(alert):
             continue
         async with session_factory() as session:

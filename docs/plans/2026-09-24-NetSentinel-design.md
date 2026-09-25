@@ -136,18 +136,20 @@
 class UnifiedAlert:
     id: UUID
     source_engine: Literal["suricata", "ml"]
-    detected_at: datetime          # 事件原始时间戳
-    src_ip: str; src_port: int | None
-    dst_ip: str; dst_port: int | None
+    detected_at: datetime  # 事件原始时间戳
+    src_ip: str
+    src_port: int | None
+    dst_ip: str
+    dst_port: int | None
     protocol: str | None
-    signature: str                 # suricata: 签名文本; ml: 预测类别
-    attack_type: str | None        # 归一化攻击类型
-    severity: Literal["critical","high","medium","low","info"]
-    confidence: float              # ml: 概率; suricata: 由 priority 映射
+    signature: str  # suricata: 签名文本; ml: 预测类别
+    attack_type: str | None  # 归一化攻击类型
+    severity: Literal["critical", "high", "medium", "low", "info"]
+    confidence: float  # ml: 概率; suricata: 由 priority 映射
     category: str | None
-    raw: dict                      # 原始 eve / 原始 flow（jsonb）
+    raw: dict  # 原始 eve / 原始 flow（jsonb）
     dedup_key: str
-    status: Literal["new","triaged","escalated","closed","suppressed"]
+    status: Literal["new", "triaged", "escalated", "closed", "suppressed"]
 ```
 
 ### 5.2 引擎 A：ML 分类器

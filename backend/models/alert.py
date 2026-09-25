@@ -78,9 +78,7 @@ class Alert(Base, UUIDMixin, TimestampMixin):
     # 单独存一列而非查询时拼接，是为了能用索引加速去重判断。
     dedup_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     # 流转状态：new → triaged → escalated / closed / suppressed
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="new", index=True
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="new", index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     __table_args__ = (

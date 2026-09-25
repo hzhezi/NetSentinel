@@ -28,9 +28,7 @@ class Settings(BaseSettings):
 
     # ── 存储 ────────────────────────────────────────────────
     # 注意驱动是 asyncpg（异步），因为整个后端是 async 的，不能用同步 psycopg
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://netsentinel:netsentinel@localhost:5432/netsentinel"
-    )
+    DATABASE_URL: str = "postgresql+asyncpg://netsentinel:netsentinel@localhost:5432/netsentinel"
     REDIS_URL: str = "redis://localhost:6379/0"  # 0 号库，后续放告警总线与缓存
 
     # ── LLM ─────────────────────────────────────────────────

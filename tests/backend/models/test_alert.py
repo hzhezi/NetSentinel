@@ -77,17 +77,20 @@ async def test_jsonb_supports_field_query(pg_session):
     这条是选真 PG 的直接收益 —— 也就是"为什么值得为 JSONB 放弃 SQLite 替身"。
     可以在不解析整个 JSON 的前提下，直接查原始记录里的某个字段。
     """
-    pg_session.add_all([
-        _make_alert(raw={"alert": {"signature_id": 1000001}}, signature="nmap"),
-        _make_alert(raw={"alert": {"signature_id": 1000002}}, signature="sqli"),
-    ])
+    pg_session.add_all(
+        [
+            _make_alert(raw={"alert": {"signature_id": 1000001}}, signature="nmap"),
+            _make_alert(raw={"alert": {"signature_id": 1000002}}, signature="sqli"),
+        ]
+    )
     await pg_session.commit()
 
     # 用原生 SQL 演示 JSONB 的 ->> 取值查询（ORM 层也有对应写法）
-    rows = (await pg_session.execute(text(
-        "SELECT signature FROM alerts "
-        "WHERE raw -> 'alert' ->> 'signature_id' = '1000001'"
-    ))).all()
+    rows = (
+        await pg_session.execute(
+            text("SELECT signature FROM alerts WHERE raw -> 'alert' ->> 'signature_id' = '1000001'")
+        )
+    ).all()
     assert [r[0] for r in rows] == ["nmap"]
 
 
@@ -110,15 +113,15 @@ async def test_detected_at_is_stored_as_given(pg_session):
 
 async def test_filter_by_severity(pg_session):
     """severity 上有索引，是仪表盘主要过滤维度。"""
-    pg_session.add_all([
-        _make_alert(severity="high", signature="A"),
-        _make_alert(severity="low", signature="B"),
-    ])
+    pg_session.add_all(
+        [
+            _make_alert(severity="high", signature="A"),
+            _make_alert(severity="low", signature="B"),
+        ]
+    )
     await pg_session.commit()
 
-    rows = (await pg_session.scalars(
-        select(Alert).where(Alert.severity == "high")
-    )).all()
+    rows = (await pg_session.scalars(select(Alert).where(Alert.severity == "high"))).all()
     assert len(rows) == 1
     assert rows[0].signature == "A"
 
@@ -126,15 +129,15 @@ async def test_filter_by_severity(pg_session):
 async def test_order_by_detected_at(pg_session):
     """按事件时间排序 —— 重放演示依赖这个顺序。"""
     now = datetime.now(UTC)
-    pg_session.add_all([
-        _make_alert(detected_at=now, signature="later"),
-        _make_alert(detected_at=now - timedelta(minutes=5), signature="earlier"),
-    ])
+    pg_session.add_all(
+        [
+            _make_alert(detected_at=now, signature="later"),
+            _make_alert(detected_at=now - timedelta(minutes=5), signature="earlier"),
+        ]
+    )
     await pg_session.commit()
 
-    rows = (await pg_session.scalars(
-        select(Alert).order_by(Alert.detected_at.asc())
-    )).all()
+    rows = (await pg_session.scalars(select(Alert).order_by(Alert.detected_at.asc()))).all()
     assert [r.signature for r in rows] == ["earlier", "later"]
 
 
@@ -144,9 +147,11 @@ async def test_composite_index_is_actually_created_in_postgres(pg_session):
     这条只有真 PG 能查：读 pg_indexes 系统表。
     用 SQLite 测时只能断言"模型里声明了索引名"，那不是同一回事。
     """
-    rows = (await pg_session.execute(text(
-        "SELECT indexname FROM pg_indexes WHERE tablename = 'alerts'"
-    ))).all()
+    rows = (
+        await pg_session.execute(
+            text("SELECT indexname FROM pg_indexes WHERE tablename = 'alerts'")
+        )
+    ).all()
     names = {r[0] for r in rows}
     assert "idx_alerts_detected_severity" in names
 
@@ -155,10 +160,23 @@ def test_table_has_expected_columns():
     """锁住表结构：列名变更必须显式改这条测试，避免悄悄破坏接口。"""
     cols = set(Alert.__table__.c.keys())
     expected = {
-        "id", "created_at",
-        "source_engine", "detected_at",
-        "src_ip", "src_port", "dst_ip", "dst_port", "protocol",
-        "signature", "attack_type", "severity", "confidence",
-        "category", "raw", "dedup_key", "status", "notes",
+        "id",
+        "created_at",
+        "source_engine",
+        "detected_at",
+        "src_ip",
+        "src_port",
+        "dst_ip",
+        "dst_port",
+        "protocol",
+        "signature",
+        "attack_type",
+        "severity",
+        "confidence",
+        "category",
+        "raw",
+        "dedup_key",
+        "status",
+        "notes",
     }
     assert expected <= cols

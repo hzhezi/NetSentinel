@@ -29,6 +29,7 @@ def _valid_payload(**overrides):
 
 # ── AlertCreate：入参契约 ──────────────────────────────────────
 
+
 def test_alert_create_accepts_valid_payload():
     obj = AlertCreate(**_valid_payload())
     assert obj.severity == "high"
@@ -76,6 +77,7 @@ def test_alert_create_ignores_extra_fields_by_default():
 
 
 # ── AlertResponse：出参契约 ────────────────────────────────────
+
 
 def test_alert_response_from_orm_object():
     """响应模型必须能直接从 ORM 对象构造（from_attributes）。
@@ -125,6 +127,7 @@ def test_alert_response_excludes_internal_dedup_key():
 
 
 # ── AlertPage：分页契约 ────────────────────────────────────────
+
 
 def test_alert_page_wraps_items_with_total():
     """列表接口统一返回 {items, total, page, size}。
