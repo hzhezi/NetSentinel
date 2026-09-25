@@ -5,9 +5,49 @@
 
 from datetime import UTC, datetime
 
+from backend.schemas.alert import AlertCreate
 from backend.services.alert_service import AlertPipeline, normalize_alert
 
 # ── normalize_alert：把引擎输出归一化为统一形状 ─────────────────
+
+
+def test_normalize_returns_alert_create():
+    """归一化产出的是 AlertCreate 而不是 dict。
+
+    这条锁住一个契约：字段清单**单一来源**于 AlertCreate。
+    若有人改回手写 dict，字段改名时就会两处不同步（且 mypy 查不出）。
+    """
+    out = normalize_alert(
+        {
+            "source_engine": "ml",
+            "src_ip": "1.1.1.1",
+            "dst_ip": "2.2.2.2",
+            "signature": "X",
+            "severity": "high",
+        }
+    )
+    assert isinstance(out, AlertCreate)
+
+
+def test_normalize_passes_validation():
+    """宽容兜底之后，产出必须能通过 AlertCreate 的严格校验。
+
+    这验证了两阶段设计成立：宽容处理在前、严格闸门在后，
+    脏输入经过兜底后是合法数据，不会在构造时抛 ValidationError。
+    """
+    out = normalize_alert(
+        {
+            "source_engine": "suricata",
+            # 故意给一个非法严重度 + 数字型 confidence 字符串
+            "severity": "WHATEVER",
+            "confidence": "0.5",
+            "src_ip": "1.1.1.1",
+            "dst_ip": "2.2.2.2",
+            "signature": "X",
+        }
+    )
+    assert out.severity == "info"  # 降级
+    assert out.confidence == 0.5  # 类型转换
 
 
 def test_normalize_fills_required_fields():
@@ -22,9 +62,9 @@ def test_normalize_fills_required_fields():
         }
     )
 
-    assert out["source_engine"] == "ml"
-    assert out["src_ip"] == "45.33.32.156"
-    assert out["signature"] == "DDoS"
+    assert out.source_engine == "ml"
+    assert out.src_ip == "45.33.32.156"
+    assert out.signature == "DDoS"
 
 
 def test_normalize_generates_dedup_key():
@@ -43,7 +83,7 @@ def test_normalize_generates_dedup_key():
             "severity": "medium",
         }
     )
-    assert out["dedup_key"] == "1.1.1.1-ET SCAN Nmap"
+    assert out.dedup_key == "1.1.1.1-ET SCAN Nmap"
 
 
 def test_normalize_defaults_detected_at_to_now_when_missing():
@@ -64,7 +104,7 @@ def test_normalize_defaults_detected_at_to_now_when_missing():
     )
     after = datetime.now(UTC)
 
-    assert before <= out["detected_at"] <= after
+    assert before <= out.detected_at <= after
 
 
 def test_normalize_preserves_given_detected_at():
@@ -80,7 +120,7 @@ def test_normalize_preserves_given_detected_at():
             "severity": "low",
         }
     )
-    assert out["detected_at"] == ts
+    assert out.detected_at == ts
 
 
 def test_normalize_fills_missing_optional_fields():
@@ -94,9 +134,9 @@ def test_normalize_fills_missing_optional_fields():
             "severity": "low",
         }
     )
-    assert out["src_port"] is None
-    assert out["protocol"] is None
-    assert out["confidence"] == 0.0
+    assert out.src_port is None
+    assert out.protocol is None
+    assert out.confidence == 0.0
 
 
 def test_normalize_handles_unknown_severity_gracefully():
@@ -114,7 +154,7 @@ def test_normalize_handles_unknown_severity_gracefully():
             "severity": "UNKNOWN_LEVEL",
         }
     )
-    assert out["severity"] == "info"
+    assert out.severity == "info"
 
 
 # ── AlertPipeline：去重 ────────────────────────────────────────

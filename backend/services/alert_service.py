@@ -16,56 +16,76 @@ from typing import Any
 
 from cachetools import TTLCache
 
+from backend.schemas.alert import AlertCreate, Severity
+
 # 引擎可能传来各种意料之外的严重度字符串（如 Suricata priority 映射偏差、
 # ML 标签命名不一致）。收敛到平台允许的 5 个级别，未知值降级为 info。
-_VALID_SEVERITIES = {"critical", "high", "medium", "low", "info"}
-_DEFAULT_SEVERITY = "info"
+_VALID_SEVERITIES: set[str] = {"critical", "high", "medium", "low", "info"}
+_DEFAULT_SEVERITY: Severity = "info"
 
 
-def normalize_alert(raw: dict[str, Any]) -> dict[str, Any]:
-    """把任意引擎的输出归一化为 AlertCreate 所需的字段形状。
+def _normalize_severity(value: Any) -> Severity:
+    """把任意严重度输入收敛为合法的 Severity。
 
-    设计取舍：**宽容而非严格**。
-        引擎输出字段命名不完全可控，缺字段、多字段、值异常都可能发生。
-        如果这里严格校验（缺字段就报错），一条异常告警会让整批重放中断 ——
-        对安全系统而言，"漏报"比"标错级别"严重得多。
-        所以这里尽量兜底，把严格的形状校验交给 Pydantic Schema
-        （在写库前一刻发生）。
-
-    返回 dict 而非 AlertCreate：
-        让本函数保持无 Pydantic 依赖的纯数据变换，便于单测与复用。
+    单独抽成函数是为了让**类型窄化**明确可见：
+    `str` 经此函数后返回 `Severity`（Literal），mypy 才能接受它传给
+    AlertCreate。若内联写在字典/dict 里，类型会退化成 `Any | str`，
+    mypy 会报 arg-type 错误（这是真实遇到过的）。
     """
+    if isinstance(value, str) and value.lower().strip() in _VALID_SEVERITIES:
+        # cast 的必要性：mypy 无法从集合成员判断推出 Literal 类型，
+        # 但此处逻辑上已保证值属于该集合。
+        return value.lower().strip()  # type: ignore[return-value]
+    return _DEFAULT_SEVERITY
+
+
+def normalize_alert(raw: dict[str, Any]) -> AlertCreate:
+    """把任意引擎的输出归一化为 AlertCreate。
+
+    两阶段设计（顺序不可颠倒）：
+        引擎原始输出（脏：缺字段、值异常、命名不一）
+            ↓ 第一阶段的**宽容**处理：降级、兜底、类型转换
+        中间态（已尽量补全）
+            ↓ AlertCreate 构造的**严格**校验（最后一道闸门）
+        合法数据 → 落库
+
+    为什么不直接返回手写 dict：AlertCreate 的字段与归一化产出**完全一一对应**，
+    手写 dict 等于把字段清单抄第二遍（改名时必漏），且类型退化为
+    dict[str, Any] —— mypy 对拼错的字段名毫无察觉。
+    返回 AlertCreate 让字段单一来源、类型可检查、合法性当场校验。
+    """
+    # ── 第一阶段：宽容兜底（必须在构造之前完成）──────────────────
     # 严重度归一到合法集合；未知值降级为 info 而不是崩溃
-    raw_severity = (raw.get("severity") or "").lower().strip()
-    severity = raw_severity if raw_severity in _VALID_SEVERITIES else _DEFAULT_SEVERITY
+    severity = _normalize_severity(raw.get("severity"))
 
     # 源 IP 缺失时用 0.0.0.0 占位而不是 None：
     # 数据库该列是 NOT NULL，且去重键需要它参与拼接。
     src_ip = raw.get("src_ip") or "0.0.0.0"
     signature = raw.get("signature") or "Unknown"
 
-    return {
-        "source_engine": raw["source_engine"],
+    # ── 第二阶段：严格构造 ────────────────────────────────────
+    return AlertCreate(
+        source_engine=raw["source_engine"],
         # 事件原始时间优先。缺失才用当前时间兜底 ——
         # 注意必须是"兜底"而非默认行为，否则重放时所有告警都变成"现在"。
-        "detected_at": raw.get("detected_at") or datetime.now(UTC),
-        "src_ip": src_ip,
-        "src_port": raw.get("src_port"),
-        "dst_ip": raw.get("dst_ip") or "0.0.0.0",
-        "dst_port": raw.get("dst_port"),
-        "protocol": raw.get("protocol"),
-        "signature": signature,
-        "attack_type": raw.get("attack_type"),
-        "severity": severity,
+        detected_at=raw.get("detected_at") or datetime.now(UTC),
+        src_ip=src_ip,
+        src_port=raw.get("src_port"),
+        dst_ip=raw.get("dst_ip") or "0.0.0.0",
+        dst_port=raw.get("dst_port"),
+        protocol=raw.get("protocol"),
+        signature=signature,
+        attack_type=raw.get("attack_type"),
+        severity=severity,
         # 转 float 并兜底：引擎可能给 None 或字符串
-        "confidence": float(raw.get("confidence") or 0.0),
-        "category": raw.get("category"),
+        confidence=float(raw.get("confidence") or 0.0),
+        category=raw.get("category"),
         # 保留完整原始记录，便于事后追溯研判依据
-        "raw": raw.get("raw") or raw,
+        raw=raw.get("raw") or raw,
         # 去重键：(源IP, 签名)。同源同规则的重复触发视为"同一件事"；
         # 不同源或不同规则则是不同事件，不合并。
-        "dedup_key": f"{src_ip}-{signature}",
-    }
+        dedup_key=f"{src_ip}-{signature}",
+    )
 
 
 class AlertPipeline:
