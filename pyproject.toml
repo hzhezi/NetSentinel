@@ -51,6 +51,10 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# 排除自动生成的迁移文件：它们由 alembic autogenerate 产出，
+# 是"历史记录"而非手写代码。对此套用风格规则会导致每次生成迁移
+# 都要手工修格式，收益为零。格式统一由 `ruff format` 处理即可。
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
