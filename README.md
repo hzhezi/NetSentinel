@@ -4,7 +4,7 @@
 
 **准实时 NIDS 检测与研判平台**
 
-双引擎检测（Suricata 规则 + ML 异常检测）· LangGraph 多智能体 LLM 研判 · 实时 Web 可视化
+Suricata 规则检测 · LangGraph 多智能体 LLM 研判 · 实时 Web 可视化
 
 [![CI](https://github.com/hzhezi/NetSentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/hzhezi/NetSentinel/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
@@ -28,13 +28,13 @@
 NetSentinel 把**网络层检测**与 **LLM 智能研判**打通，形成一条从流量到可读结论的完整链路：
 
 ```
-pcap / 数据集 ──→ 双引擎检测 ──→ 统一告警 ──→ 多智能体研判 ──→ Web 可视化
-                  规则 + ML                  Triage / Investigation / Report
+pcap ──→ Suricata 规则检测 ──→ 统一告警 ──→ 多智能体研判 ──→ Web 可视化
+                              Triage / Investigation / Report
 ```
 
 ### 核心特性
 
-- **双引擎检测**：Suricata 规则引擎（抓已知）+ ML 异常检测（抓未知），在**告警层**统一为 `UnifiedAlert`
+- **规则检测**：Suricata 规则引擎，输出统一为 `UnifiedAlert`
 - **准实时重放**：按原始时间戳节奏重放 pcap / 数据集，复现实时 IDS 观感，无需网卡/root/靶场
 - **多智能体研判**：LangGraph 编排 L1 快速分诊 → L2 工具驱动深度调查，按 SOC 分级控制成本
 - **证据可审计**：每次研判记录完整 evidence trail，结论可逐行追溯，不做黑盒
@@ -46,15 +46,15 @@ pcap / 数据集 ──→ 双引擎检测 ──→ 统一告警 ──→ 多�
 
 ```
 ┌───────────────────────── 数据层 ─────────────────────────┐
-│  CICIDS2017 特征 CSV（训练/评测） · 小段 pcap（演示）      │
+│  带攻击的 pcap（检测 + 演示）                              │
 └────────────────────────────┬─────────────────────────────┘
                              ↓
 ┌──────────────────────── 输入层 ──────────────────────────┐
 │  CsvFeeder / EveFeeder（按时间戳重放）· (预留)LiveFeeder  │
 └────────────────────────────┬─────────────────────────────┘
                              ↓
-┌────────────────────── 检测层（双引擎）───────────────────┐
-│  ML 分类器（XGBoost）  ·  Suricata 规则引擎              │
+┌───────────────────────── 检测层 ─────────────────────────┐
+│  Suricata 规则引擎                                        │
 │            ↓ 归一化 → UnifiedAlert                       │
 │  去重(TTLCache) · 抑制规则 · 富化(GeoIP)                 │
 └────────────────────────────┬─────────────────────────────┘
@@ -81,7 +81,7 @@ pcap / 数据集 ──→ 双引擎检测 ──→ 统一告警 ──→ 多�
 | 后端 | Python 3.13 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 (async) · Alembic |
 | 前端 | React 18 · TypeScript · Vite · Ant Design · TanStack Query · Zustand |
 | 存储 | PostgreSQL 16 · Redis 7 |
-| 检测 | Suricata 7（Docker）· scikit-learn / XGBoost |
+| 检测 | Suricata 7（Docker）|
 | 研判 | LangGraph（自定义节点）· DeepSeek API |
 | 可观测 | structlog（结构化 JSON）· Prometheus metrics |
 | 质量 | pytest · ruff · mypy · Vitest · GitHub Actions |
@@ -144,7 +144,7 @@ NetSentinel/
 │   ├── schemas/        # Pydantic 出入参
 │   ├── repositories/   # 数据访问层
 │   ├── services/       # 领域逻辑
-│   ├── detection/      # feeders · parsers · 告警管道 · ML
+│   ├── detection/      # feeders · parsers · 告警管道
 │   ├── agents/         # LangGraph 图 · 节点 · prompts · tools
 │   ├── api/            # 路由 + WebSocket
 │   ├── middleware/     # 限流 · 请求日志 · 异常处理
@@ -176,7 +176,7 @@ NetSentinel/
 - [x] PostgreSQL + Redis 本地服务
 - [ ] 数据库模型与迁移
 - [ ] 告警 Schema / 数据访问层 / 领域服务
-- [ ] CICIDS2017 数据准备 + ML 训练与推理
+- [ ] Suricata 集成 + EVE 解析 + 重放 Feeder
 - [ ] 准实时重放 Feeder
 - [ ] DeepSeek 客户端 + LangGraph 分诊图
 - [ ] API + WebSocket 实时推送
@@ -210,7 +210,7 @@ NetSentinel/
 
 ### 为什么是 FastAPI 而不是 Spring Boot
 
-本项目的核心是机器学习检测与 LLM 研判，两者生态均以 Python 为主。采用 Python 全栈可让**检测、ML、Agent、数据处理用同一语言链路**，避免跨语言微服务带来的部署与运维复杂度。性能瓶颈在 LLM 调用与 IO 等待，而非需要 JVM 支撑的高并发计算。
+本项目的核心是 LLM 研判与 Agent 编排，其生态以 Python 为主。采用 Python 全栈可让**检测、Agent、API 用同一语言链路**，避免跨语言微服务带来的部署与运维复杂度。性能瓶颈在 LLM 调用与 IO 等待，而非需要 JVM 支撑的高并发计算。
 
 ---
 

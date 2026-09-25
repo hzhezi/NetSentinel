@@ -15,7 +15,7 @@ from backend.schemas.alert import AlertCreate, AlertPage, AlertResponse
 
 def _valid_payload(**overrides):
     data = {
-        "source_engine": "ml",
+        "source_engine": "suricata",
         "detected_at": datetime.now(UTC),
         "src_ip": "45.33.32.156",
         "dst_ip": "10.0.0.5",
@@ -90,7 +90,7 @@ def test_alert_response_from_orm_object():
     class FakeRow:
         id = uuid.uuid4()
         created_at = datetime.now(UTC)
-        source_engine = "ml"
+        source_engine = "suricata"
         detected_at = datetime.now(UTC)
         src_ip = "1.1.1.1"
         src_port = 1234
@@ -107,7 +107,7 @@ def test_alert_response_from_orm_object():
         notes = ""
 
     resp = AlertResponse.model_validate(FakeRow())
-    assert resp.source_engine == "ml"
+    assert resp.source_engine == "suricata"
     assert resp.status == "new"
     assert resp.raw == {"k": "v"}
 

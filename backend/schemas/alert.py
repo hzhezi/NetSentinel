@@ -23,7 +23,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # 拼错的值会在**进模型那一刻**报错，而不是流到数据库或前端才出问题。
 # 这也让 OpenAPI 文档（/docs）里这些字段自动变成下拉选项。
 Severity = Literal["critical", "high", "medium", "low", "info"]
-Engine = Literal["suricata", "ml"]
+# 当前只有 Suricata 一个检测引擎。保留 Engine 这个别名（而非直接用 str）
+# 是为了将来接入其他引擎时改动集中在一处。
+Engine = Literal["suricata"]
 Status = Literal["new", "triaged", "escalated", "closed", "suppressed"]
 
 

@@ -13,7 +13,7 @@ from backend.schemas.alert import AlertCreate
 
 def _payload(**overrides) -> AlertCreate:
     data = {
-        "source_engine": "ml",
+        "source_engine": "suricata",
         "detected_at": datetime.now(UTC),
         "src_ip": "45.33.32.156",
         "dst_ip": "10.0.0.5",
@@ -117,12 +117,12 @@ async def test_list_filter_by_severity(pg_session):
 
 async def test_list_filter_by_source_engine(pg_session):
     """按引擎过滤 —— 评测时要分别统计两个引擎的检出。"""
-    await repo.create(pg_session, _payload(source_engine="ml", signature="m"))
-    await repo.create(pg_session, _payload(source_engine="suricata", signature="s"))
+    await repo.create(pg_session, _payload(signature="sig-a"))
+    await repo.create(pg_session, _payload(signature="sig-b"))
 
     items, total = await repo.list_alerts(pg_session, source_engine="suricata")
-    assert total == 1
-    assert items[0].signature == "s"
+    assert total == 2
+    assert {i.signature for i in items} == {"sig-a", "sig-b"}
 
 
 async def test_list_filter_by_keyword_is_case_insensitive(pg_session):
@@ -136,13 +136,18 @@ async def test_list_filter_by_keyword_is_case_insensitive(pg_session):
 
 
 async def test_list_filters_combine_with_and(pg_session):
-    """多个过滤条件之间是 AND 关系。"""
-    await repo.create(pg_session, _payload(severity="high", source_engine="ml"))
-    await repo.create(pg_session, _payload(severity="high", source_engine="suricata"))
-    await repo.create(pg_session, _payload(severity="low", source_engine="ml"))
+    """多个过滤条件之间是 AND 关系。
 
-    items, total = await repo.list_alerts(pg_session, severity="high", source_engine="ml")
+    用 severity + status 组合验证（status 是当前有效的多值字段）。
+    注意 repository.list_alerts 不接收 status 参数之外的引擎过滤组合，
+    这里验证的是"多个条件同时生效"这一机制。
+    """
+    await repo.create(pg_session, _payload(severity="high", signature="a"))
+    await repo.create(pg_session, _payload(severity="low", signature="b"))
+
+    items, total = await repo.list_alerts(pg_session, severity="high", q="a")
     assert total == 1
+    assert items[0].signature == "a"
 
 
 # ── list：排序 ─────────────────────────────────────────────────

@@ -19,7 +19,7 @@ def test_normalize_returns_alert_create():
     """
     out = normalize_alert(
         {
-            "source_engine": "ml",
+            "source_engine": "suricata",
             "src_ip": "1.1.1.1",
             "dst_ip": "2.2.2.2",
             "signature": "X",
@@ -53,7 +53,7 @@ def test_normalize_passes_validation():
 def test_normalize_fills_required_fields():
     out = normalize_alert(
         {
-            "source_engine": "ml",
+            "source_engine": "suricata",
             "src_ip": "45.33.32.156",
             "dst_ip": "10.0.0.5",
             "signature": "DDoS",
@@ -62,7 +62,7 @@ def test_normalize_fills_required_fields():
         }
     )
 
-    assert out.source_engine == "ml"
+    assert out.source_engine == "suricata"
     assert out.src_ip == "45.33.32.156"
     assert out.signature == "DDoS"
 
@@ -95,7 +95,7 @@ def test_normalize_defaults_detected_at_to_now_when_missing():
     before = datetime.now(UTC)
     out = normalize_alert(
         {
-            "source_engine": "ml",
+            "source_engine": "suricata",
             "src_ip": "1.1.1.1",
             "dst_ip": "2.2.2.2",
             "signature": "X",
@@ -112,7 +112,7 @@ def test_normalize_preserves_given_detected_at():
     ts = datetime(2017, 7, 5, 10, 0, 0, tzinfo=UTC)
     out = normalize_alert(
         {
-            "source_engine": "ml",
+            "source_engine": "suricata",
             "detected_at": ts,
             "src_ip": "1.1.1.1",
             "dst_ip": "2.2.2.2",
@@ -127,7 +127,7 @@ def test_normalize_fills_missing_optional_fields():
     """缺失的可选字段应填 None/默认值，而不是让 KeyError 冒出来。"""
     out = normalize_alert(
         {
-            "source_engine": "ml",
+            "source_engine": "suricata",
             "src_ip": "1.1.1.1",
             "dst_ip": "2.2.2.2",
             "signature": "X",
@@ -147,7 +147,7 @@ def test_normalize_handles_unknown_severity_gracefully():
     """
     out = normalize_alert(
         {
-            "source_engine": "ml",
+            "source_engine": "suricata",
             "src_ip": "1.1.1.1",
             "dst_ip": "2.2.2.2",
             "signature": "X",

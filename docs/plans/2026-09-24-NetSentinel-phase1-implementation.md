@@ -2,11 +2,11 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 打通最小可用闭环 —— 上传 CICIDS2017 CSV → 按时间戳准实时重放 → ML 检测 → 统一告警 → LLM 分诊 → PostgreSQL + Web 实时流。
+**Goal:** 打通最小可用闭环 —— 上传 pcap → Suricata 检测 → 按时间戳准实时重放 → 统一告警 → LLM 分诊 → PostgreSQL + Web 实时流。
 
 **Architecture:** FastAPI 分层架构（api / services / repositories / models / schemas / core），检测层与展示层通过统一告警模型解耦，LLM 研判用 LangGraph 承载。前端 React + TS 通过 WebSocket 消费实时告警。
 
-**Tech Stack:** Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2.0(async) · Alembic · PostgreSQL 16 · Redis 7 · XGBoost/scikit-learn · LangGraph · DeepSeek API · React 18 + TypeScript + Vite + Ant Design + TanStack Query + Zustand
+**Tech Stack:** Python 3.13 · FastAPI · Pydantic v2 · SQLAlchemy 2.0(async) · Alembic · PostgreSQL 16 · Redis 7 · Suricata 7（Docker）· LangGraph · DeepSeek API · React 18 + TypeScript + Vite + Ant Design + TanStack Query + Zustand
 
 ---
 
@@ -116,7 +116,6 @@ dependencies = [
   "pydantic>=2.9", "pydantic-settings>=2.6",
   "sqlalchemy[asyncio]>=2.0.36", "asyncpg>=0.30", "alembic>=1.14",
   "redis>=5.2", "arq>=0.26",
-  "pandas>=2.2", "numpy>=2.1", "scikit-learn>=1.5", "xgboost>=2.1", "joblib>=1.4",
   "langgraph>=0.2", "langgraph-checkpoint-postgres>=2.0",
   "openai>=1.54",
   "structlog>=24.4", "cachetools>=5.5",
@@ -795,286 +794,333 @@ git commit -am "feat: 添加告警归一化与去重"
 
 ---
 
-## Task 9: 数据准备脚本（CICIDS2017）
+## Task 9: Suricata 集成与 EVE 解析
 
 **Files:**
-- Create: `scripts/prepare_data.py`
-- Create: `scripts/README.md`
-- Test: `tests/test_prepare_data.py`（对样本 fixture 测试，不联网）
+- Create: `docker/Dockerfile.suricata`
+- Create: `suricata/suricata.yaml`
+- Create: `suricata/rules/custom.rules`
+- Create: `backend/detection/parsers/__init__.py`
+- Create: `backend/detection/parsers/eve_parser.py`
+- Test: `tests/backend/detection/parsers/test_eve_parser.py`
 
 **Step 1: 写失败测试**
 
 ```python
-def test_pick_attack_sample_returns_rows():
-    from scripts.prepare_data import split_and_sample
+from backend.detection.parsers.eve_parser import parse_eve_line
 
-    import pandas as pd
 
-    df = pd.DataFrame(
-        {
-            " Label": ["BENIGN", "DDoS", "BENIGN"],
-            "Destination Port": [80, 80, 443],
-            "Flow Duration": [1, 2, 3],
-        }
+def test_parse_alert_event():
+    line = (
+        '{"timestamp":"2017-07-05T10:00:00.123456+0000","flow_id":1234,'
+        '"in_iface":"eth0","event_type":"alert","src_ip":"45.33.32.156","src_port":52344,'
+        '"dest_ip":"10.0.0.5","dest_port":80,"proto":"TCP",'
+        '"alert":{"action":"allowed","gid":1,"signature_id":1000002,'
+        '"rev":1,"signature":"Possible SQL Injection","category":"Web Application Attack",'
+        '"severity":1}}'
     )
-    normal, attack = split_and_sample(df, n=1)
-    assert len(normal) == 1 and len(attack) == 1
+    event = parse_eve_line(line)
+    assert event is not None
+    assert event.event_type == "alert"
+    assert event.signature == "Possible SQL Injection"
+    assert event.src_ip == "45.33.32.156"
+    assert event.category == "Web Application Attack"
+
+
+def test_parse_ignores_non_alert_events():
+    """flow/dns/http 等事件不产出告警，应返回 None。"""
+    line = '{"timestamp":"2017-07-05T10:00:00+0000","event_type":"flow","flow_id":1}'
+    assert parse_eve_line(line) is None
+
+
+def test_parse_malformed_json_returns_none():
+    """脏行不能让整个重放崩掉 —— 返回 None 并跳过。"""
+    assert parse_eve_line("not json at all") is None
+    assert parse_eve_line("") is None
+
+
+def test_parse_missing_fields_does_not_crash():
+    """缺字段的 alert 事件也要能解析（用默认值兜底）。"""
+    line = '{"event_type":"alert","alert":{"signature":"X"}}'
+    event = parse_eve_line(line)
+    assert event is not None
+    assert event.signature == "X"
+    assert event.src_ip == "0.0.0.0"
+
+
+def test_parse_maps_suricata_priority_to_severity():
+    """Suricata 的 priority（1 最高）映射为平台 severity。"""
+    def make(sev):
+        return (
+            '{"event_type":"alert","src_ip":"1.1.1.1","dest_ip":"2.2.2.2",'
+            f'"alert":{{"signature":"S","severity":{sev}}}}}'
+        )
+    assert parse_eve_line(make(1)).severity == "critical"
+    assert parse_eve_line(make(2)).severity == "high"
+    assert parse_eve_line(make(3)).severity == "medium"
+    assert parse_eve_line(make(4)).severity == "low"
 ```
 
-**Step 2: 运行确认失败** — Expected: FAIL
+**Step 2: 运行确认失败**
 
-**Step 3: 写实现**
-
-`scripts/prepare_data.py` 职责：
-1. 从 `data/raw/` 读取 CICIDS CSV（若不存在，打印下载指引与镜像链接，**不自动下载**）
-2. 清洗：列名去空格、`Label` 归一化、inf/NaN 处理
-3. 切分 normal / attack 并采样，写出 `data/processed/{train,test}.parquet`
-4. 打印样本数与标签分布
-
-```python
-# scripts/prepare_data.py（核心函数）
-import pandas as pd
-
-
-def split_and_sample(df: pd.DataFrame, n: int | None = None):
-    df = df.copy()
-    df.columns = [c.strip() for c in df.columns]
-    normal = df[df["Label"].str.upper() == "BENIGN"]
-    attack = df[df["Label"].str.upper() != "BENIGN"]
-    if n:
-        normal, attack = normal.head(n), attack.head(n)
-    return normal, attack
-```
-
-**Step 4: 运行确认通过** — Run: `uv run pytest tests/test_prepare_data.py -v`；Expected: PASS
-
-**Step 5: 下载数据并生成产物**
-
-Run: `uv run python scripts/prepare_data.py`
-（若数据未下载，按提示从 Kaggle/HuggingFace 镜像获取后放入 `data/raw/`）
-Expected: 打印标签分布，生成 `data/processed/*.parquet`
-
-**Step 6: 提交**
-
-```bash
-git add scripts/ tests/test_prepare_data.py
-git commit -m "feat: 添加 CICIDS2017 数据准备脚本"
-```
-
----
-
-## Task 10: ML 训练脚本与指标
-
-**Files:**
-- Create: `backend/detection/ml/train.py`
-- Create: `backend/detection/ml/__init__.py`
-- Test: `tests/backend/detection/ml/test_train.py`
-
-**Step 1: 写失败测试**
-
-```python
-def test_train_returns_model_and_metrics():
-    import numpy as np
-    from backend.detection.ml.train import train_binary
-
-    rng = np.random.default_rng(0)
-    X = rng.random((200, 5))
-    y = (X[:, 0] > 0.5).astype(int)
-    model, metrics = train_binary(X, y)
-    assert "accuracy" in metrics
-    assert metrics["accuracy"] >= 0.6
-    assert hasattr(model, "predict")
-```
-
-**Step 2: 运行确认失败** — Expected: FAIL
+Run: `uv run pytest tests/backend/detection/parsers/test_eve_parser.py -v`
+Expected: FAIL — `ModuleNotFoundError`
 
 **Step 3: 写实现**
 
 ```python
-# backend/detection/ml/train.py
+# backend/detection/parsers/eve_parser.py
+"""Suricata EVE JSON 解析。
+
+只关心 alert 事件（其余 flow/dns/http 不产出告警）。
+**任何脏数据都返回 None，绝不抛异常** —— 一条坏行不能中断整批重放。
+"""
+
 from __future__ import annotations
 
-import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
-from xgboost import XGBClassifier
-
-
-def train_binary(X, y) -> tuple[XGBClassifier, dict]:
-    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-    model = XGBClassifier(
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.1,
-        subsample=0.9,
-        eval_metric="logloss",
-        n_jobs=-1,
-    )
-    model.fit(X_tr, y_tr)
-    pred = model.predict(X_te)
-    metrics = {
-        "accuracy": float(accuracy_score(y_te, pred)),
-        "precision": float(precision_score(y_te, pred, zero_division=0)),
-        "recall": float(recall_score(y_te, pred, zero_division=0)),
-        "f1": float(f1_score(y_te, pred, zero_division=0)),
-    }
-    return model, metrics
-```
-
-**Step 4: 运行确认通过** — Expected: PASS
-
-**Step 5: 训练真实模型**
-
-Run: `uv run python -m backend.detection.ml.train --data data/processed/train.parquet --out models/xgb_binary.joblib`
-Expected: 打印 accuracy / precision / recall / f1，生成 `models/xgb_binary.joblib`（`models/` 已 gitignore，不入库）
-
-**Step 6: 提交**
-
-```bash
-git add backend/detection/ml/ tests/backend/detection/ml/
-git commit -m "feat: 添加 ML 训练脚本与指标"
-```
-
----
-
-## Task 11: ML 推理器
-
-**Files:**
-- Create: `backend/detection/ml/predictor.py`
-- Test: `tests/backend/detection/ml/test_predictor.py`
-
-**Step 1: 写失败测试**
-
-```python
-def test_predictor_returns_prediction(tmp_path):
-    import joblib, numpy as np
-    from backend.detection.ml.train import train_binary
-    from backend.detection.ml.predictor import MLPredictor
-
-    rng = np.random.default_rng(0)
-    X = rng.random((200, 5))
-    y = (X[:, 0] > 0.5).astype(int)
-    model, _ = train_binary(X, y)
-    path = tmp_path / "m.joblib"
-    joblib.dump(model, path)
-
-    p = MLPredictor(path, feature_names=[f"f{i}" for i in range(5)])
-    r = p.predict({"f0": 0.9, "f1": 0.1, "f2": 0.1, "f3": 0.1, "f4": 0.1})
-    assert r.label in (0, 1)
-    assert 0.0 <= r.confidence <= 1.0
-```
-
-**Step 2: 运行确认失败** — Expected: FAIL
-
-**Step 3: 写实现**
-
-```python
-# backend/detection/ml/predictor.py
-from __future__ import annotations
-
+import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-import joblib
-import numpy as np
+# Suricata 的 priority 越小越严重（1 最高）。
+# 与平台 severity 语义相反，必须显式映射，否则会高低颠倒。
+_PRIORITY_TO_SEVERITY = {
+    1: "critical",
+    2: "high",
+    3: "medium",
+    4: "low",
+    5: "info",
+}
 
 
 @dataclass
-class Prediction:
-    label: int
-    confidence: float
+class EveAlert:
+    event_type: str
+    detected_at: datetime
+    src_ip: str
+    src_port: int | None
+    dst_ip: str
+    dst_port: int | None
+    protocol: str | None
+    signature: str
+    signature_id: int
+    category: str
+    severity: str
+    raw: dict
 
 
-class MLPredictor:
-    def __init__(self, model_path, feature_names: list[str]):
-        self.model = joblib.load(model_path)
-        self.feature_names = feature_names
+def _parse_ts(value: str) -> datetime:
+    """解析 Suricata 时间戳（形如 2017-07-05T10:00:00.123456+0000）。"""
+    if not value:
+        return datetime.now(UTC)
+    try:
+        # Python 的 fromisoformat 不接受 +0000 形式，需补冒号
+        return datetime.fromisoformat(value.replace("+0000", "+00:00"))
+    except ValueError:
+        return datetime.now(UTC)
 
-    def predict(self, features: dict) -> Prediction:
-        vec = np.array([[float(features.get(f, 0.0)) for f in self.feature_names]])
-        proba = self.model.predict_proba(vec)[0]
-        label = int(np.argmax(proba))
-        return Prediction(label=label, confidence=float(proba[label]))
+
+def parse_eve_line(line: str) -> EveAlert | None:
+    """解析一行 eve.json。非 alert 事件或脏数据返回 None。"""
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        evt = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if evt.get("event_type") != "alert":
+        return None
+
+    alert = evt.get("alert") or {}
+    priority = alert.get("severity", 3)
+
+    return EveAlert(
+        event_type="alert",
+        detected_at=_parse_ts(evt.get("timestamp", "")),
+        src_ip=evt.get("src_ip") or "0.0.0.0",
+        src_port=evt.get("src_port"),
+        dst_ip=evt.get("dest_ip") or "0.0.0.0",
+        dst_port=evt.get("dest_port"),
+        protocol=evt.get("proto"),
+        signature=alert.get("signature") or "Unknown",
+        signature_id=int(alert.get("signature_id") or 0),
+        category=alert.get("category") or "",
+        severity=_PRIORITY_TO_SEVERITY.get(priority, "info"),
+        raw=evt,
+    )
 ```
 
-**Step 4: 运行确认通过** — Expected: PASS
+```yaml
+# suricata/suricata.yaml（关键片段）
+%YAML 1.1
+---
+vars:
+  address-groups:
+    HOME_NET: "[10.0.0.0/8,192.168.0.0/16,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+  port-groups:
+    HTTP_PORTS: "80"
+    HTTP_SERVERS: "$HOME_NET"
+    SSH_PORTS: "22"
 
-**Step 5: 提交**
+default-rule-path: /etc/suricata/rules
+rule-files:
+  - custom.rules
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+```
 
 ```bash
-git commit -am "feat: 添加 ML 推理器"
+# suricata/rules/custom.rules（示例，覆盖设计文档 §5.2 列的攻击类型）
+alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (msg:"SQL Injection UNION SELECT"; flow:established,to_server; content:"UNION"; http_uri; nocase; content:"SELECT"; http_uri; nocase; distance:0; classtype:web-application-attack; sid:1000002; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 22 (msg:"SSH Brute Force Attempt"; flow:established,to_server; content:"SSH-"; depth:4; threshold:type limit, track by_src, count 5, seconds 60; classtype:attempted-login; sid:1000003; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"Nmap OS Detection Probe"; flags:A,U,P,S,F; classtype:network-scan; sid:1000004; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"Log4Shell JNDI Injection"; flow:established,to_server; content:"${jndi:"; nocase; classtype:attempted-admin; sid:1000005; rev:1;)
+alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (msg:"Directory Traversal"; flow:established,to_server; content:"/etc/passwd"; http_uri; nocase; classtype:attempted-recon; sid:1000006; rev:1;)
+```
+
+**Step 4: 运行确认通过**
+
+Run: `uv run pytest tests/backend/detection/parsers/test_eve_parser.py -v`
+Expected: PASS
+
+**Step 5: 用真实 pcap 验证 Suricata 能产出 eve.json**
+
+Run:
+```bash
+docker build -f docker/Dockerfile.suricata -t netsentinel-suricata .
+docker run --rm -v "$PWD/data:/data" -v "$PWD/suricata:/etc/suricata:ro" \
+  netsentinel-suricata suricata -r /data/raw/<某个>.pcap -l /data/logs
+head -3 data/logs/eve.json
+```
+Expected: 出现 `"event_type":"alert"` 的行
+
+**Step 6: 提交**
+
+```bash
+git add docker/ suricata/ backend/detection/ tests/backend/detection/
+git commit -m "feat: 添加 Suricata 集成与 EVE 解析"
 ```
 
 ---
 
-## Task 12: CsvFeeder（按时间戳准实时重放）
+## Task 10: EveFeeder（按时间戳准实时重放）
 
 **Files:**
 - Create: `backend/detection/feeders/__init__.py`
-- Create: `backend/detection/feeders/csv_feeder.py`
-- Test: `tests/backend/detection/feeders/test_csv_feeder.py`
+- Create: `backend/detection/feeders/eve_feeder.py`
+- Test: `tests/backend/detection/feeders/test_eve_feeder.py`
 
 **Step 1: 写失败测试**
 
 ```python
 @pytest.mark.asyncio
 async def test_feeder_emits_in_time_order(tmp_path):
-    import pandas as pd
-    from backend.detection.feeders.csv_feeder import CsvFeeder
+    import json
+    from backend.detection.feeders.eve_feeder import EveFeeder
 
-    df = pd.DataFrame(
-        {
-            "Timestamp": ["2017-07-05 10:00:00", "2017-07-05 10:00:01", "2017-07-05 10:00:02"],
-            "src_ip": ["1.1.1.1"] * 3,
-            "Label": ["BENIGN", "DDoS", "BENIGN"],
-        }
+    lines = [
+        {"timestamp": "2017-07-05T10:00:02.000000+0000", "event_type": "alert",
+         "src_ip": "1.1.1.1", "alert": {"signature": "third"}},
+        {"timestamp": "2017-07-05T10:00:00.000000+0000", "event_type": "alert",
+         "src_ip": "1.1.1.1", "alert": {"signature": "first"}},
+        {"timestamp": "2017-07-05T10:00:01.000000+0000", "event_type": "alert",
+         "src_ip": "1.1.1.1", "alert": {"signature": "second"}},
+    ]
+    p = tmp_path / "eve.json"
+    p.write_text("\n".join(json.dumps(x) for x in lines))
+
+    feeder = EveFeeder(p, speed=1_000_000.0, max_delay=0.001)
+    seen = [e.signature async for e in feeder.stream()]
+    # 应按事件时间升序发出，而不是按文件里的原始顺序
+    assert seen == ["first", "second", "third"]
+
+
+@pytest.mark.asyncio
+async def test_feeder_skips_non_alert_and_malformed(tmp_path):
+    from backend.detection.feeders.eve_feeder import EveFeeder
+
+    p = tmp_path / "eve.json"
+    p.write_text(
+        '{"timestamp":"2017-07-05T10:00:00+0000","event_type":"flow"}\n'
+        'garbage line\n'
+        '{"timestamp":"2017-07-05T10:00:01+0000","event_type":"alert",'
+        '"src_ip":"1.1.1.1","alert":{"signature":"ok"}}\n'
     )
-    p = tmp_path / "s.csv"
-    df.to_csv(p, index=False)
-
-    feeder = CsvFeeder(p, speed=1000.0, max_delay=0.001)
-    rows = [r async for r in feeder.stream()]
-    assert len(rows) == 3
-    assert [r["Label"] for r in rows] == ["BENIGN", "DDoS", "BENIGN"]
+    feeder = EveFeeder(p, speed=1_000_000.0, max_delay=0.001)
+    seen = [e.signature async for e in feeder.stream()]
+    assert seen == ["ok"]
 ```
 
-**Step 2: 运行确认失败** — Expected: FAIL
+**Step 2: 运行确认失败** — Run: `uv run pytest tests/backend/detection/feeders/ -v`；Expected: FAIL
 
 **Step 3: 写实现**
 
 ```python
-# backend/detection/feeders/csv_feeder.py
+# backend/detection/feeders/eve_feeder.py
+"""按时间戳节奏重放 Suricata eve.json。
+
+这是"准实时演示"的核心：eve.json 里每条告警都带**事件原始时间戳**，
+按它排序并逐条发出，就能复现实时 IDS 的观感 ——
+告警按攻击真实发生的顺序一条条涌出，而无需网卡、root、靶场。
+
+两处关键处理：
+    1. **先排序**：eve.json 是 Suricata 追加写的，天然按时间有序；
+       但多文件拼接或人工处理过就可能乱序。重放前排序更稳妥。
+    2. **单步延迟封顶**（MAX_SLEEP）：数据集里两次攻击可能间隔数小时，
+       真按原速等待会让演示无法进行。倍速 + 封顶保证可演示。
+"""
+
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-import pandas as pd
+from backend.detection.parsers.eve_parser import EveAlert, parse_eve_line
 
-MAX_SLEEP = 5.0  # 单步最长等待，防止真实间隔过大拖垮演示
+MAX_SLEEP = 5.0  # 单步最长等待（秒），防止原始间隔过大拖垮演示
 
 
-class CsvFeeder:
-    """按行时间戳节奏重放 CICIDS flow CSV。"""
+class EveFeeder:
+    """读取 eve.json，按事件时间节奏逐条产出 alert。"""
 
-    def __init__(self, path: str | Path, speed: float = 1.0, max_delay: float = MAX_SLEEP):
+    def __init__(self, path: str | Path, speed: float = 1.0,
+                 max_delay: float = MAX_SLEEP):
         self.path = Path(path)
+        # speed 是倍速：10 表示 10 倍速播放（间隔除以 10）
         self.speed = max(speed, 1e-6)
         self.max_delay = max_delay
 
-    async def stream(self) -> AsyncIterator[dict]:
-        df = pd.read_csv(self.path)
-        df.columns = [c.strip() for c in df.columns]
-        ts = pd.to_datetime(df.get("Timestamp"), errors="coerce")
+    def _load_sorted(self) -> list[EveAlert]:
+        """读入全部 alert 并按 detected_at 升序排序。"""
+        events: list[EveAlert] = []
+        with open(self.path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                event = parse_eve_line(line)
+                if event is not None:
+                    events.append(event)
+        events.sort(key=lambda e: e.detected_at)
+        return events
+
+    async def stream(self) -> AsyncIterator[EveAlert]:
+        events = self._load_sorted()
         prev = None
-        for (_, row), t in zip(df.iterrows(), ts, strict=False):
-            if prev is not None and pd.notna(t):
-                delay = (t - prev).total_seconds() / self.speed
+        for event in events:
+            if prev is not None:
+                delay = (event.detected_at - prev).total_seconds() / self.speed
                 if delay > 0:
                     await asyncio.sleep(min(delay, self.max_delay))
-            if pd.notna(t):
-                prev = t
-            yield row.to_dict()
+            prev = event.detected_at
+            yield event
 ```
 
 **Step 4: 运行确认通过** — Expected: PASS
@@ -1082,10 +1128,157 @@ class CsvFeeder:
 **Step 5: 提交**
 
 ```bash
-git commit -am "feat: 添加 CsvFeeder 准实时重放"
+git commit -am "feat: 添加 EveFeeder 准实时重放"
 ```
 
 ---
+
+## Task 11: 告警管道接入重放（parser → 归一化 → 去重 → 落库 → 推送）
+
+**Files:**
+- Modify: `backend/services/alert_service.py`（增加从 EveAlert 归一化的适配）
+- Test: `tests/backend/services/test_alert_service.py`（补充）
+
+**Step 1: 写失败测试**
+
+```python
+def test_normalize_from_eve_alert():
+    """EveAlert → AlertCreate 的适配（走现有 normalize_alert）。"""
+    from backend.detection.parsers.eve_parser import EveAlert
+    from datetime import UTC, datetime
+    from backend.services.alert_service import normalize_alert
+
+    eve = EveAlert(
+        event_type="alert", detected_at=datetime.now(UTC),
+        src_ip="45.33.32.156", src_port=1, dst_ip="10.0.0.5", dst_port=80,
+        protocol="TCP", signature="SQL Injection", signature_id=1000002,
+        category="Web Application Attack", severity="high", raw={"a": 1},
+    )
+    out = normalize_alert({
+        "source_engine": "suricata",
+        "detected_at": eve.detected_at,
+        "src_ip": eve.src_ip, "src_port": eve.src_port,
+        "dst_ip": eve.dst_ip, "dst_port": eve.dst_port,
+        "protocol": eve.protocol, "signature": eve.signature,
+        "severity": eve.severity, "category": eve.category,
+        "raw": eve.raw,
+    })
+    assert out.source_engine == "suricata"
+    assert out.signature == "SQL Injection"
+    assert out.dedup_key.startswith("45.33.32.156-")
+```
+
+**Step 2: 运行确认失败** — Expected: FAIL
+
+**Step 3: 写实现**
+
+在 `alert_service.py` 增加一个适配函数，把 `EveAlert` 转成 `normalize_alert` 的入参 dict：
+
+```python
+def eve_to_raw(event) -> dict:
+    """把 EveAlert 适配成 normalize_alert 的入参。
+
+    单独一个函数的原因：EveAlert 是 dataclass（解析层），
+    normalize_alert 接受 dict（服务层）。这层适配是"解析层 → 服务层"的边界，
+    放在服务层说明"服务层知道解析层的存在"，方向正确。
+    """
+    return {
+        "source_engine": "suricata",
+        "detected_at": event.detected_at,
+        "src_ip": event.src_ip,
+        "src_port": event.src_port,
+        "dst_ip": event.dst_ip,
+        "dst_port": event.dst_port,
+        "protocol": event.protocol,
+        "signature": event.signature,
+        "severity": event.severity,
+        "category": event.category,
+        "raw": event.raw,
+    }
+```
+
+**Step 4: 运行确认通过** — Expected: PASS
+
+**Step 5: 提交**
+
+```bash
+git commit -am "feat: 添加 EveAlert 到统一告警的适配"
+```
+
+---
+
+## Task 12: 重放 Worker（串联 parser → 管道 → 落库 → WebSocket）
+
+**Files:**
+- Create: `backend/workers/__init__.py`
+- Create: `backend/workers/replay.py`
+- Test: `tests/backend/workers/test_replay.py`
+
+**Step 1: 写失败测试**
+
+```python
+@pytest.mark.asyncio
+async def test_replay_publishes_alerts(tmp_path, pg_session):
+    """重放应把 eve 里的告警落库并逐条广播。"""
+    import json
+    from backend.workers.replay import run_replay
+
+    eve = tmp_path / "eve.json"
+    eve.write_text(json.dumps({
+        "timestamp": "2017-07-05T10:00:00+0000", "event_type": "alert",
+        "src_ip": "45.33.32.156", "dest_ip": "10.0.0.5", "proto": "TCP",
+        "alert": {"signature": "SQL Injection", "signature_id": 1000002,
+                  "category": "Web Attack", "severity": 1},
+    }))
+
+    published = []
+
+    async def on_alert(payload):
+        published.append(payload)
+
+    result = await run_replay(
+        eve_path=eve, speed=1_000_000, session_factory=lambda: _Ctx(pg_session),
+        on_alert=on_alert,
+    )
+    assert result["emitted"] == 1
+    assert published[0]["type"] == "new_alert"
+    assert published[0]["data"]["signature"] == "SQL Injection"
+```
+
+（`_Ctx` 是个简单的 async 上下文管理器包装，测试里定义）
+
+**Step 2: 运行确认失败** — Expected: FAIL
+
+**Step 3: 写实现**
+
+```python
+# backend/workers/replay.py
+async def run_replay(eve_path, *, speed=1.0, session_factory, on_alert=None,
+                     pipeline=None) -> dict:
+    """重放 eve.json：逐条解析 → 归一化 → 去重 → 落库 → 回调推送。
+
+    为什么用回调（on_alert）而不是直接 import ws_manager：
+        worker 不该知道"推送方式是 WebSocket"。将来可能改成 Redis 发布、
+        或 CLI 打印。回调让推送方式可替换，也让测试不需要起 WebSocket。
+    """
+```
+
+**Step 4: 运行确认通过** — Expected: PASS
+
+**Step 5: 端到端手动验证**
+
+Run: 启动 API；`curl -X POST localhost:8000/api/v1/feeds/replay -d '{"eve_path":"..."}'`；
+同时 `websocat ws://localhost:8000/ws/events`。
+Expected: 告警逐条出现
+
+**Step 6: 提交**
+
+```bash
+git commit -am "feat: 添加重放 worker 打通检测链路"
+```
+
+---
+
 
 ## Task 13: DeepSeek 客户端与结构化输出
 
@@ -1544,125 +1737,6 @@ git commit -am "feat: 添加 WebSocket 实时推送"
 
 ---
 
-## Task 17: 重放 Worker（串联全链路）
-
-**Files:**
-- Create: `backend/workers/__init__.py`
-- Create: `backend/workers/replay.py`
-- Modify: `backend/api/v1/routes/feeds.py`
-- Test: `tests/backend/workers/test_replay.py`
-
-**Step 1: 写失败测试**（用假 feeder、假 predictor、假 llm，断言广播被调用）
-
-```python
-@pytest.mark.asyncio
-async def test_replay_publishes_alerts(monkeypatch):
-    from backend.workers import replay
-
-    published = []
-
-    async def fake_broadcast(msg):
-        published.append(msg)
-
-    monkeypatch.setattr("backend.api.websocket.manager.ws_manager.broadcast", fake_broadcast)
-    monkeypatch.setattr("backend.workers.replay.build_triage_graph", lambda **k: _FakeGraph())
-    # 其余依赖注入见实现
-    ...
-```
-
-**Step 2: 运行确认失败** — Expected: FAIL
-
-**Step 3: 写实现**
-
-`backend/workers/replay.py` 职责：
-1. 用 `CsvFeeder` 逐条读 flow
-2. 每条经 `MLPredictor` 得到 `label`/`confidence`；`label==1` 才生成告警
-3. `normalize_alert` → `AlertPipeline.is_duplicate` 过滤
-4. 写库（`alert_repository.create`）
-5. 经 `ws_manager.broadcast({"type": "new_alert", "data": ...})` 推送
-6. 对高严重度告警调用 `build_triage_graph(...).ainvoke(...)`，结果再广播 `{"type": "triage", ...}`
-
-```python
-# backend/workers/replay.py（骨架）
-async def run_replay(
-    csv_path: str,
-    *,
-    speed: float = 1.0,
-    model_path: str,
-    feature_names: list[str],
-    llm,
-    session_factory,
-    pipeline=None,
-    on_alert=None,
-) -> dict:
-    from backend.detection.feeders.csv_feeder import CsvFeeder
-    from backend.detection.ml.predictor import MLPredictor
-    from backend.repositories import alert_repository as repo
-    from backend.schemas.alert import AlertCreate
-    from backend.services.alert_service import AlertPipeline, normalize_alert
-
-    feeder = CsvFeeder(csv_path, speed=speed)
-    predictor = MLPredictor(model_path, feature_names)
-    pipeline = pipeline or AlertPipeline()
-    emitted = 0
-
-    async for row in feeder.stream():
-        pred = predictor.predict(row)
-        if pred.label != 1:
-            continue
-        alert = normalize_alert(
-            {
-                "source_engine": "ml",
-                "detected_at": None,
-                "src_ip": row.get("Source IP", "0.0.0.0"),
-                "dst_ip": row.get("Destination IP", "0.0.0.0"),
-                "protocol": "TCP",
-                "signature": row.get("Label", "ATTACK"),
-                "attack_type": row.get("Label"),
-                "severity": "high" if pred.confidence >= 0.9 else "medium",
-                "confidence": pred.confidence,
-                "raw": row,
-            }
-        )
-        if pipeline.is_duplicate(alert):
-            continue
-        async with session_factory() as session:
-            row_db = await repo.create(session, AlertCreate(**alert))
-        payload = {"type": "new_alert", "data": {"id": str(row_db.id), **alert}}
-        if on_alert:
-            await on_alert(payload)
-        emitted += 1
-    return {"emitted": emitted}
-```
-
-`feeds.py` 增加：
-```python
-@router.post("/replay")
-async def start_replay(body: ReplayRequest, background: BackgroundTasks):
-    background.add_task(run_replay, body.csv_path, speed=body.speed, ...)
-    return {"status": "started"}
-```
-
-**Step 4: 运行确认通过** — Expected: PASS
-
-**Step 5: 端到端手动验证**
-
-Run: 启动 API，然后
-```bash
-curl -X POST localhost:8000/api/v1/feeds/replay -H 'Content-Type: application/json' \
-  -d '{"csv_path":"data/processed/test.parquet","speed":200}'
-```
-同时用 `websocat ws://localhost:8000/ws/events` 观察。
-Expected: 告警消息持续输出
-
-**Step 6: 提交**
-
-```bash
-git commit -am "feat: 添加重放 worker 打通检测链路"
-```
-
----
-
 ## Task 18: 前端脚手架
 
 **Files:**
@@ -1889,13 +1963,10 @@ git push -u origin feat/phase-1
 
 ---
 
-# 期 2：规则引擎 + 深度调查（任务级，执行前展开为同等粒度）
+# 期 2：深度调查与富化（任务级，执行前展开为同等粒度）
 
 | # | 任务 | 关键文件 | 验证 |
 |---|---|---|---|
-| 2.1 | Suricata Docker 集成 | `docker/Dockerfile.suricata`, `suricata/rules/*.rules`, `backend/detection/suricata_runner.py` | 离线跑样例 pcap 生成 eve.json |
-| 2.2 | EVE 解析器 | `backend/detection/parsers/eve_parser.py` | 单测：正常/脏数据/缺字段不崩 |
-| 2.3 | EveFeeder（按时间戳重放 eve.json）| `backend/detection/feeders/eve_feeder.py` | 单测：顺序与节奏；集成：广播告警 |
 | 2.4 | GeoIP 富化 | `backend/detection/enrichment/geoip.py` | 单测：查 IP 返回国家/城市 |
 | 2.5 | 抑制规则（表 + API + 热路径缓存）| `backend/models/suppression.py`, `services/suppression_service.py` | 单测：AND 逻辑、过期、缓存命中 |
 | 2.6 | 条件边路由（escalate 判定）| `backend/agents/graph.py`, `backend/agents/routing.py` | 单测：高严重度/低置信度升级 |
@@ -1910,7 +1981,6 @@ git push -u origin feat/phase-1
 
 | # | 任务 | 关键文件 | 验证 |
 |---|---|---|---|
-| 3.1 | 多模型对比实验 | `backend/detection/ml/experiments.py`, `scripts/run_experiments.py` | 输出指标表（XGB/RF/LGBM/LR）|
 | 3.2 | 评测落库与结果 API | `backend/models/evaluation.py`, `services/evaluation_service.py`, `api/v1/routes/evaluation.py` | 单测 + API 返回指标 |
 | 3.3 | 前端评测页 | `frontend/src/pages/Evaluation.tsx` | 目视：指标表与混淆矩阵 |
 | 3.4 | LLM 研判评测集与打分 | `scripts/llm_eval.py`, `data/eval/labeled_sample.json` | 输出一致率/耗时/成本 |

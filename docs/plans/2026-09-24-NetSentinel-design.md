@@ -1,6 +1,6 @@
 # NetSentinel 设计文档
 
-> 准实时 NIDS 检测与研判平台：双引擎检测（规则 + ML）+ 多智能体 LLM 研判 + Web 可视化
+> 准实时 NIDS 检测与研判平台：Suricata 规则检测 + 多智能体 LLM 研判 + Web 可视化
 >
 > 状态：已评审通过（2026-09-24）
 > 交付形态：硕士专业实践（实践报告 + 现场答辩演示，各占约 50%）
@@ -13,7 +13,7 @@
 传统 NIDS（Suricata / Snort 等）能高效检测已知攻击，但产出的是**原始告警**：数量大、误报多、缺乏上下文与解释，分析师需要大量人工研判。而近年出现的 LLM 安全运营（AI SOC）工作几乎都基于 **SIEM/主机日志（Wazuh 等）**，**不覆盖网络流量层**。
 
 ### 1.2 定位
-构建一个平台，把 **网络层检测**（规则引擎 + 机器学习异常检测）与 **LLM 智能研判**（多智能体协同）打通，形成一条从流量到可读结论的完整链路。
+构建一个平台，把**网络层规则检测**（Suricata）与 **LLM 智能研判**（多智能体协同）打通，形成一条从流量到可读结论的完整链路。
 
 ### 1.3 创新点（报告立论）
 经开源调研（见 §12），"**网络流量检测 → LLM 研判**"这条交叉链路在开源生态中几乎空白：
@@ -29,16 +29,17 @@
 ### 2.1 成功标准（可验证）
 | 维度 | 标准 |
 |---|---|
-| 系统 | `docker compose up` 一键启动；能加载数据集并产出告警 |
-| 演示 | 现场上传 pcap/CSV → 告警按时间顺序流式涌出 → AI 研判卡片自动生成 → 可点开证据链 |
-| 检测指标 | ML 在 CICIDS2017 上给出准确率/精确率/召回率/F1，并与多模型对比 |
+| 系统 | `docker compose up` 一键启动；能加载 pcap 并产出告警 |
+| 演示 | 现场上传 pcap → 告警按时间顺序流式涌出 → AI 研判卡片自动生成 → 可点开证据链 |
+| 检测指标 | Suricata 规则在 pcap 上的告警产出情况（规则命中、去重后数量）|
 | 研判指标 | LLM 研判在人工抽样的 50~100 条上给出误报识别准确率、解释质量评分、平均耗时与成本 |
 | 工程 | 分层架构、类型安全、测试、CI、容器化、结构化日志齐全 |
 
 ### 2.2 非目标（明确排除，避免过度设计）
 - ❌ 真实网卡实时抓包（架构预留接口，不做实现）
 - ❌ 串联阻断（IPS）/ 自动防火墙联动
-- ❌ 特征级真正融合（规则与 ML 在告警层统一，非在特征层融合）
+- ❌ 机器学习检测引擎（本项目定位是"现有 IDS + LLM 研判"，
+     不训练流量分类模型；详见 §2.12 决策记录）
 - ❌ 多租户、OAuth、Kafka、K8s、微服务拆分
 - ❌ 规则热更新与在线学习
 
@@ -48,21 +49,19 @@
 
 ```
 ┌──────────────────────────── 数据层 ────────────────────────────┐
-│  CICIDS2017：MachineLearningCSV（训练/评测）                    │
-│             小段 pcap（演示）                                    │
+│  带攻击的 pcap（演示 + 检测）                                    │
+│  可选：CICIDS2017 的 pcap（真实攻击流量）                        │
 └───────────────────────────────┬────────────────────────────────┘
                                 ↓
 ┌──────────────────────── 输入 / 采集层 ──────────────────────────┐
 │  Feeder（统一 Source 接口，支持倍速 / 暂停 / 断点）               │
-│    ├─ CsvFeeder   ：CICIDS flow 行，按时间戳节奏重放             │
-│    ├─ EveFeeder   ：Suricata eve.json，按时间戳节奏重放           │
+│    ├─ EveFeeder   ：Suricata eve.json，按时间戳节奏重放（主路径） │
 │    └─ (预留) LiveFeeder：网卡抓包                                │
 └───────────────────────────────┬────────────────────────────────┘
                                 ↓
-┌──────────────────────── 检测层（双引擎）────────────────────────┐
-│  引擎 A  ML 分类器（XGBoost / RF / LightGBM）                    │
-│  引擎 B  Suricata 规则引擎（离线跑 pcap → eve.json）              │
-│              ↓  归一化                                          │
+┌───────────────────────── 检测层 ───────────────────────────────┐
+│  Suricata 规则引擎（离线跑 pcap → eve.json）                     │
+│              ↓  解析 + 归一化                                    │
 │         Unified Alert（统一告警模型）                            │
 │   去重（TTLCache）+ 抑制规则过滤 + 严重度映射 + 富化（GeoIP）      │
 └───────────────────────────────┬────────────────────────────────┘
@@ -79,13 +78,13 @@
                                 ↓
 ┌──────────────────── 存储层（PostgreSQL + Redis）────────────────┐
 │  alerts / alert_enrichment / triage_results / suppression_rules │
-│  evaluation_runs / ml_models / users / audit_logs               │
+│  evaluation_runs / users / audit_logs                           │
 │  LangGraph checkpoint 表（PostgresSaver 自建）                   │
 │  Redis：告警总线（Streams）+ 任务队列 + LLM 结果缓存              │
 └───────────────────────────────┬────────────────────────────────┘
                                 ↓
 ┌──────────────────────── 展示层（Web）──────────────────────────┐
-│  Dashboard / 实时告警流 / 告警详情+证据链 / 评测报告 / 日报      │
+│  Dashboard / 实时告警流 / 告警详情+证据链 / 研判评测 / 日报      │
 │  WebSocket 实时推送                                             │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -102,23 +101,16 @@
 ### 4.1 数据源
 | 用途 | 内容 | 大小 |
 |---|---|---|
-| ML 训练/评测 | CICIDS2017 `MachineLearningCSV`（78 维特征 + 标签）| ~300MB |
-| 演示 | CICIDS2017 小段 pcap（含攻击）| 几十~几百 MB |
+| 检测 + 演示 | 带攻击的 pcap（CICIDS2017 的 pcap 版本，或其他公开样本）| 几百 MB |
 | 降级来源 | Kaggle / HuggingFace 镜像的小样本 pcap | — |
 
-下载策略：官方源为美国 UNB 服务器，国内可能不可达；准备 Kaggle/HuggingFace 镜像作为 fallback。总下载量控制在 1GB 以内。
+下载策略：官方源为美国 UNB 服务器，国内可能不可达；**HuggingFace 亦被墙，用 `hf-mirror.com` 镜像**（实测可用）。
 
-### 4.2 两条数据通路
+### 4.2 数据通路
 ```
-通路 R（规则，演示主路径）
-  pcap ──suricata -r──→ eve.json ──EveFeeder（按时间戳重放）──→ 规则告警
-                                                                  │
-通路 M（ML，评测主路径 + 可流式演示）                              │
-  CICIDS CSV ──CsvFeeder（按时间戳重放）──→ ML 推理 ──→ 异常告警 ─┤
-                                                                  ↓
-                                                          统一告警 → 研判层
+pcap ──suricata -r──→ eve.json ──EveFeeder（按时间戳重放）──→ 统一告警 → 研判层
 ```
-两通路在**统一告警模型**处汇合，下游（去重/抑制/富化/研判/存储/推送）完全一致。
+检测只经规则引擎一路，下游（去重/抑制/富化/研判/存储/推送）统一。
 
 ### 4.3 流式演示机制（关键技术点）
 - Suricata 支持离线读取 pcap：`suricata -r demo.pcap -l ./logs`，输出的 `eve.json` **每条事件带原始时间戳**。
@@ -135,37 +127,33 @@
 ```python
 class UnifiedAlert:
     id: UUID
-    source_engine: Literal["suricata", "ml"]
+    source_engine: Literal["suricata"]
     detected_at: datetime  # 事件原始时间戳
     src_ip: str
     src_port: int | None
     dst_ip: str
     dst_port: int | None
     protocol: str | None
-    signature: str  # suricata: 签名文本; ml: 预测类别
+    signature: str         # Suricata 签名文本
     attack_type: str | None  # 归一化攻击类型
     severity: Literal["critical", "high", "medium", "low", "info"]
-    confidence: float  # ml: 概率; suricata: 由 priority 映射
+    confidence: float      # 由 Suricata priority 映射而来
     category: str | None
-    raw: dict  # 原始 eve / 原始 flow（jsonb）
+    raw: dict              # 原始 eve 事件（jsonb）
     dedup_key: str
     status: Literal["new", "triaged", "escalated", "closed", "suppressed"]
 ```
 
-### 5.2 引擎 A：ML 分类器
-- **输入**：CICIDS2017 的 78 维流特征（`MachineLearningCSV`）。
-- **预处理**：缺失值/无穷值处理、类别编码、标准化、标签映射为二分类（正常/攻击）与多分类（攻击类型）。
-- **模型**：主模型 XGBoost；对比模型 RandomForest、LightGBM、Logistic Regression（作为基线）。
-- **输出**：`label`、`probability`、`attack_type`、`confidence`。
-- **持久化**：模型文件 + 版本记录入 `ml_models` 表，推理时加载。
+> 设计说明：`source_engine` 与 `confidence` 等字段保留为通用形式，
+> 是为了将来若接入其他检测引擎时，下游管道无需改动。
 
-### 5.3 引擎 B：Suricata 规则引擎
+### 5.2 Suricata 规则引擎
 - **运行**：Docker 内 `suricata -r <pcap>`，输出 `eve.json`。
 - **规则**：自定义规则集（覆盖 SSH 暴力破解、SQL 注入、Nmap 扫描、Log4Shell、XSS、反弹 shell、DNS 隧道、ICMP 扫描、目录穿越等），可扩充 ET 规则集。
 - **解析**：`EVEParser` 将 eve 行解析为类型化对象（不因脏数据崩溃，返回 None）。
 - **严重度映射**：Suricata priority → 平台 severity，并对语义较弱的 category 做 override。
 
-### 5.4 告警处理管道
+### 5.3 告警处理管道
 1. **去重**：`TTLCache(maxsize, ttl=60s)`，key = `src_ip + signature`，防告警风暴。
 2. **抑制**：匹配 `suppression_rules`（sig_id / src_ip / category 的 AND 逻辑 + 可选过期），命中则丢弃；规则列表带 30s 内存缓存（热路径友好）。
 3. **富化**：GeoIP（国家/城市/经纬度/组织）等。
@@ -264,7 +252,6 @@ START
 | `triage_results` | alert_id, agent, verdict, severity, confidence, summary, mitre(jsonb), actions(jsonb), evidence_trail(jsonb), tokens, latency_ms | 研判结果与证据链 |
 | `suppression_rules` | id, name, sig_id, src_ip, category, reason, expires_at, enabled | 抑制规则 |
 | `evaluation_runs` | id, kind, dataset, params(jsonb), metrics(jsonb), created_at | 评测记录 |
-| `ml_models` | id, name, version, path, metrics(jsonb), trained_at | 模型版本 |
 | `users` | id, username, password_hash, role | 认证与 RBAC |
 | `audit_logs` | id, actor, action, target, detail, created_at | 审计 |
 | LangGraph checkpoint 表 | — | 由 `PostgresSaver.setup()` 自动创建 |
@@ -322,8 +309,8 @@ WS   /ws/events                   实时告警与研判推送
   - **Dashboard**：KPI 卡片、流量/告警时间线、严重度分布、Top 攻击源。
   - **Alerts**：实时告警流 + 过滤/搜索/分页 + 状态流转。
   - **Alert Detail**：原始事件、富化信息、AI 研判卡片、**证据链时间线**、「深度调查」按钮。
-  - **Feed Control**：选择数据集、倍速、引擎，开始/暂停重放。
-  - **Evaluation**：ML 指标表与图、模型对比、LLM 研判评测结果。
+  - **Feed Control**：选择 pcap、倍速，开始/暂停重放。
+  - **Evaluation**：LLM 研判评测结果（一致率 / 耗时 / 成本）。
   - **Reports**：安全日报。
   - **Settings**：抑制规则、AI 开关与模型选择、API Key 状态。
 
@@ -331,16 +318,11 @@ WS   /ws/events                   实时告警与研判推送
 
 ## 11. 评测方案（报告核心）
 
-### 11.1 ML 检测（定量）
-- 数据集：CICIDS2017。
-- 指标：Accuracy / Precision / Recall / F1 / 混淆矩阵；二分类与多分类分别给出。
-- 对比：XGBoost vs RandomForest vs LightGBM vs Logistic Regression。
-- 细分：按攻击类型分组的检出率。
+### 11.1 规则检测（定性 + 可得处定量）
+- 在 pcap 上运行 Suricata，统计规则命中情况、去重前后告警数量。
+- 说明规则引擎的能力边界（只能覆盖已知攻击）。
 
-### 11.2 规则 vs ML（对比）
-- 在同一评测口径下比较两种引擎的检出能力与误报倾向（定性 + 可得处定量）。
-
-### 11.3 LLM 研判（定量 + 定性）
+### 11.2 LLM 研判（定量 + 定性）
 - 人工抽样 50~100 条告警作为评测集（含真实标签）。
 - 指标：**误报识别准确率**、verdict 与人工判断一致率、MITRE 映射正确率、解释质量人工打分（1~5）。
 - 成本：平均 token 与费用；**Analyst time saved**（按行业均值 20 分钟/告警估算）。
@@ -358,7 +340,7 @@ WS   /ws/events                   实时告警与研判推送
 |---|---|
 | 前端 | React 18 + TypeScript + Vite + Ant Design + ECharts + TanStack Query + Zustand |
 | 后端 | Python 3.12 + FastAPI + Pydantic v2 + SQLAlchemy 2.0(async) + Alembic |
-| 检测 | Suricata 7（Docker）+ scikit-learn / XGBoost / LightGBM |
+| 检测 | Suricata 7（Docker）|
 | 研判 | LangGraph（自定义节点）+ DeepSeek API（chat / reasoner） |
 | 存储 | PostgreSQL 16 + Redis 7 |
 | 异步 | Redis Streams（告警总线）+ ARQ/Celery（重放、评测、日报） |
@@ -375,22 +357,20 @@ WS   /ws/events                   实时告警与研判推送
 ## 13. 分期计划
 
 ### 期 1：基础闭环（保底可交付）
-- 数据准备与清洗（CICIDS CSV 下载、切分）
-- 统一告警模型 + 检测层 ML 引擎
-- CsvFeeder 按时间戳重放
+- Suricata 集成（Docker）+ 自定义规则集
+- EVE 解析 + EveFeeder 按时间戳重放
+- 统一告警模型 + 去重
 - Triage Agent（L1）+ 结构化输出
 - PostgreSQL + 基础 API + Web 实时告警流
-- **里程碑：能上传 CSV → 告警流式涌出 → 每条出 AI 分诊卡片**
+- **里程碑：上传 pcap → 告警流式涌出 → 每条出 AI 分诊卡片**
 
-### 期 2：规则引擎 + 深度调查
-- Suricata 集成 + EveFeeder 重放
-- 去重、抑制规则、GeoIP 富化
+### 期 2：深度调查
+- 抑制规则、GeoIP 富化
 - Investigation Agent（L2）+ 工具集 + evidence trail
 - Human Review（interrupt）+ 「深度调查」按钮
-- **里程碑：pcap 演示 + 可点开的完整证据链**
+- **里程碑：可点开的完整证据链**
 
 ### 期 3：评测与打磨
-- 多模型对比实验 + ML 指标页
 - LLM 研判人工评测集与结果页
 - Report Agent + 日报
 - 演示脚本、录屏备份、Docker 一键启动
@@ -403,8 +383,7 @@ WS   /ws/events                   实时告警与研判推送
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| 数据集下载受阻（UNB 服务器） | 阻塞 | Kaggle/HuggingFace 镜像 fallback；先用小样本 pcap |
-| pcap 提流与 CICIDS 特征不一致 | ML 无法用于 pcap 演示 | 两条通路分开：ML 走 CSV 评测，规则走 pcap 演示；特征级融合列为非目标 |
+| pcap 样本下载受阻 | 阻塞 | 用 hf-mirror.com 镜像；备选 Kaggle 或公开恶意流量样本站 |
 | LLM 输出不稳定 | 研判不可用 | 强制结构化 + Pydantic 校验 + 重试 + 缓存 |
 | API 成本/限流 | 费用与失败 | 缓存 + 按 sig_id 去重 + 分层（多数走便宜模型）+ 计量 |
 | 演示现场翻车 | 答辩失败 | DemoSimulator 保底 + 录屏备份 + 一键启动脚本；replay 与 live 行为分离 |
@@ -423,6 +402,32 @@ WS   /ws/events                   实时告警与研判推送
 | **SocTalk / DeepInv / AiSOC / Warren** | Apache-2.0 / 其他 | 分层 Agent 编排思路、SOC L1/L2 分级类比 | 仅作思路参考 |
 
 > **知识产权切割**：若本项目申请软著或发表论文，所有借鉴点将**重写实现**，并在文档中做明确来源说明与切割。
+
+---
+
+## 15.5 关键决策：为什么不做机器学习检测
+
+**决策**：检测层只使用 Suricata 规则引擎，**不训练流量分类模型**。
+
+**背景**：项目曾一度纳入"规则 + ML 双引擎"设计，并完成了 CICIDS2017
+的数据准备、XGBoost 训练与严格评估。后经重新确认项目定位，**将该部分整体移除**。
+
+**理由**：
+1. **项目定位是"在现有 IDS 之上加 LLM 研判"**，核心价值在于研判层对原始告警的
+   增值（误报过滤、解释、关联、处置建议），而非另造一个检测器。
+2. **实测数据显示 ML 检测的边际价值有限**：在按攻击类型留一验证（模拟零日）下，
+   平均检出率仅 10.74%（DDoS 21.45%、PortScan 0.03%），而随机切分下的
+   99.99% F1 是 CICIDS2017 已知的评估虚高所致。
+   换言之，该模型无法真正弥补规则引擎"只能抓已知攻击"的短板。
+3. **聚焦**：双引擎会引入特征管道、模型版本管理、推理服务等额外复杂度，
+   而收益与该复杂度不成比例。
+
+**保留的认知**（若将来需要重新评估）：
+- CICIDS2017 在随机切分下可轻易达到 99.9%+ F1，但这是**已知的评估虚高**，
+  报告数字时必须同时说明其局限，不得包装为模型能力强。
+- 若要真正做流量层面的未知攻击检测，代价是：需要跨流/会话级特征
+  （单条流的 78 维特征本质上无法表达"同一源访问了多少端口"），
+  以及按攻击类型分组或时间切分的严格评估流程。
 
 ---
 

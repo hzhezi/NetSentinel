@@ -16,7 +16,7 @@ from backend.models.alert import Alert
 def _make_alert(**overrides):
     """构造一条合法告警，默认值可被 overrides 覆盖。"""
     data = {
-        "source_engine": "ml",
+        "source_engine": "suricata",
         "detected_at": datetime.now(UTC),
         "src_ip": "45.33.32.156",
         "dst_ip": "10.0.0.5",
