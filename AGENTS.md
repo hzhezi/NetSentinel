@@ -138,3 +138,33 @@ uv run uvicorn backend.main:app --reload   # 起后端
 - 本机 git 身份：`hzhezi` / `102033289+hzhezi@users.noreply.github.com`（全局已设）。
 - Docker Desktop 需要**手动启动**守护进程后才可用。
 - 数据集（`data/`）与模型（`models/`）**不入库**，已在 `.gitignore`。
+- **本机 Homebrew PostgreSQL 14 会抢占 5432**，导致连到它而非 Docker 容器
+  （报错 `role "netsentinel" does not exist`）。已停用并禁止开机自启：
+  `launchctl bootout gui/$(id -u)/homebrew.mxcl.postgresql@14`，
+  plist 已重命名为 `.disabled`。若重装系统需重新处理。
+- **Mac 上 XGBoost 需先装 OpenMP**：`brew install libomp`。
+  否则报 `XGBoost Library (libxgboost.dylib) could not be loaded`。
+- **HuggingFace 官方域名被墙**；**`hf-mirror.com` 可用**（实测 20+ MB/s）。
+  数据集从这里下载，见 `data/raw/README.md`。
+- **测试跑真 PostgreSQL**（不用 SQLite 替身）：每个测试一个独立 schema，
+  见 `tests/conftest.py`。**跑测试前需确保 `docker compose up -d db` 已起**。
+
+### 2.10 关键设计决策记录（避免重复纠结）
+- **检测数据集用 CICIDS2017**（不换 UNSW-NB15 等）。
+  理由：它是 ML-IDS 领域主流基准，**可比性与文献基线最重要**；
+  换数据集只是换一种缺陷（没有无缺陷的 IDS 数据集），且会失去对标能力。
+  它已知的缺陷（特征泄漏、流重复导致评估虚高）**用"诚实报告 + 补充严格评估"处理**，
+  不因此换数据集。详见 §3。
+- **训练模型是系统组件，不是独立课题**：ML 引擎（引擎 A）需要模型，
+  故需离线训练一次并持久化为模型文件；系统运行时只做推理，不训练
+  （在线学习已列入 §2.2 明确不做）。
+- **前端 React + TS + Vite**（不用 CDN 免构建方案），见 §2.3。
+- **LangGraph 只用于研判层**，检测/存储/展示层与之解耦，见 §2.4。
+
+### 2.11 评估诚实性原则（重要）
+CICIDS2017 在随机切分下可轻松达到 99.9%+ 的 F1，但这是**已知的评估虚高**，
+不能直接作为成果宣称。报告与答辩中必须：
+- 报告数字时**同时说明其局限**（流泄漏、特征泄漏）；
+- 补充更严格的评估（按攻击类型分组切分、特征重要性分析）；
+- **不得**把高准确率包装为模型能力强的证据。
+宁可指标"不好看"也要可信 —— 这是本项目在评测上的基本态度。
