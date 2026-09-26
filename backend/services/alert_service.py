@@ -133,3 +133,36 @@ class AlertPipeline:
             return True
         self._recent[key] = True
         return False
+
+
+def eve_to_raw(event: Any) -> dict[str, Any]:
+    """把 EveAlert 适配成 normalize_alert 接受的入参 dict。
+
+    为什么需要这层适配（而不是让 normalize_alert 直接吃 EveAlert）：
+        若本模块 import 了 EveAlert，服务层就绑定了"检测引擎是 Suricata"。
+        将来接入别的引擎（或 Suricata 的多种事件）都要改服务层。
+        现在服务层只认 dict —— **谁知道怎么转是调用方的事**，
+        依赖方向保持"上层知道下层、下层不知道上层"。
+
+    参数用 Any 而非 EveAlert 类型：
+        本模块刻意不 import 解析层的类型，保持解耦。
+        代价是丢失了类型检查；换来的是服务层不依赖具体引擎。
+        （若将来需要类型安全，可定义一个 Protocol 而非直接依赖 EveAlert。）
+    """
+    return {
+        "source_engine": "suricata",
+        # 事件原始时间原样传递 —— 重放的时间线完全依赖它
+        "detected_at": event.detected_at,
+        "src_ip": event.src_ip,
+        "src_port": event.src_port,
+        "dst_ip": event.dst_ip,
+        "dst_port": event.dst_port,
+        "protocol": event.protocol,
+        "signature": event.signature,
+        "severity": event.severity,
+        "category": event.category,
+        # 原始事件带上，供研判层作为证据、供事后追溯
+        "raw": event.raw,
+        # 刻意不含 dedup_key：由 normalize_alert 统一生成，
+        # 两处都算会导致去重规则有两个来源、易不一致。
+    }
