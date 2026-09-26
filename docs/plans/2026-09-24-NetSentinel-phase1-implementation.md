@@ -850,11 +850,13 @@ def test_parse_missing_fields_does_not_crash():
 
 def test_parse_maps_suricata_priority_to_severity():
     """Suricata 的 priority（1 最高）映射为平台 severity。"""
+
     def make(sev):
         return (
             '{"event_type":"alert","src_ip":"1.1.1.1","dest_ip":"2.2.2.2",'
             f'"alert":{{"signature":"S","severity":{sev}}}}}'
         )
+
     assert parse_eve_line(make(1)).severity == "critical"
     assert parse_eve_line(make(2)).severity == "high"
     assert parse_eve_line(make(3)).severity == "medium"
@@ -1028,12 +1030,24 @@ async def test_feeder_emits_in_time_order(tmp_path):
     from backend.detection.feeders.eve_feeder import EveFeeder
 
     lines = [
-        {"timestamp": "2017-07-05T10:00:02.000000+0000", "event_type": "alert",
-         "src_ip": "1.1.1.1", "alert": {"signature": "third"}},
-        {"timestamp": "2017-07-05T10:00:00.000000+0000", "event_type": "alert",
-         "src_ip": "1.1.1.1", "alert": {"signature": "first"}},
-        {"timestamp": "2017-07-05T10:00:01.000000+0000", "event_type": "alert",
-         "src_ip": "1.1.1.1", "alert": {"signature": "second"}},
+        {
+            "timestamp": "2017-07-05T10:00:02.000000+0000",
+            "event_type": "alert",
+            "src_ip": "1.1.1.1",
+            "alert": {"signature": "third"},
+        },
+        {
+            "timestamp": "2017-07-05T10:00:00.000000+0000",
+            "event_type": "alert",
+            "src_ip": "1.1.1.1",
+            "alert": {"signature": "first"},
+        },
+        {
+            "timestamp": "2017-07-05T10:00:01.000000+0000",
+            "event_type": "alert",
+            "src_ip": "1.1.1.1",
+            "alert": {"signature": "second"},
+        },
     ]
     p = tmp_path / "eve.json"
     p.write_text("\n".join(json.dumps(x) for x in lines))
@@ -1051,7 +1065,7 @@ async def test_feeder_skips_non_alert_and_malformed(tmp_path):
     p = tmp_path / "eve.json"
     p.write_text(
         '{"timestamp":"2017-07-05T10:00:00+0000","event_type":"flow"}\n'
-        'garbage line\n'
+        "garbage line\n"
         '{"timestamp":"2017-07-05T10:00:01+0000","event_type":"alert",'
         '"src_ip":"1.1.1.1","alert":{"signature":"ok"}}\n'
     )
@@ -1093,8 +1107,7 @@ MAX_SLEEP = 5.0  # 单步最长等待（秒），防止原始间隔过大拖垮�
 class EveFeeder:
     """读取 eve.json，按事件时间节奏逐条产出 alert。"""
 
-    def __init__(self, path: str | Path, speed: float = 1.0,
-                 max_delay: float = MAX_SLEEP):
+    def __init__(self, path: str | Path, speed: float = 1.0, max_delay: float = MAX_SLEEP):
         self.path = Path(path)
         # speed 是倍速：10 表示 10 倍速播放（间隔除以 10）
         self.speed = max(speed, 1e-6)
@@ -1149,20 +1162,34 @@ def test_normalize_from_eve_alert():
     from backend.services.alert_service import normalize_alert
 
     eve = EveAlert(
-        event_type="alert", detected_at=datetime.now(UTC),
-        src_ip="45.33.32.156", src_port=1, dst_ip="10.0.0.5", dst_port=80,
-        protocol="TCP", signature="SQL Injection", signature_id=1000002,
-        category="Web Application Attack", severity="high", raw={"a": 1},
+        event_type="alert",
+        detected_at=datetime.now(UTC),
+        src_ip="45.33.32.156",
+        src_port=1,
+        dst_ip="10.0.0.5",
+        dst_port=80,
+        protocol="TCP",
+        signature="SQL Injection",
+        signature_id=1000002,
+        category="Web Application Attack",
+        severity="high",
+        raw={"a": 1},
     )
-    out = normalize_alert({
-        "source_engine": "suricata",
-        "detected_at": eve.detected_at,
-        "src_ip": eve.src_ip, "src_port": eve.src_port,
-        "dst_ip": eve.dst_ip, "dst_port": eve.dst_port,
-        "protocol": eve.protocol, "signature": eve.signature,
-        "severity": eve.severity, "category": eve.category,
-        "raw": eve.raw,
-    })
+    out = normalize_alert(
+        {
+            "source_engine": "suricata",
+            "detected_at": eve.detected_at,
+            "src_ip": eve.src_ip,
+            "src_port": eve.src_port,
+            "dst_ip": eve.dst_ip,
+            "dst_port": eve.dst_port,
+            "protocol": eve.protocol,
+            "signature": eve.signature,
+            "severity": eve.severity,
+            "category": eve.category,
+            "raw": eve.raw,
+        }
+    )
     assert out.source_engine == "suricata"
     assert out.signature == "SQL Injection"
     assert out.dedup_key.startswith("45.33.32.156-")
@@ -1224,12 +1251,23 @@ async def test_replay_publishes_alerts(tmp_path, pg_session):
     from backend.workers.replay import run_replay
 
     eve = tmp_path / "eve.json"
-    eve.write_text(json.dumps({
-        "timestamp": "2017-07-05T10:00:00+0000", "event_type": "alert",
-        "src_ip": "45.33.32.156", "dest_ip": "10.0.0.5", "proto": "TCP",
-        "alert": {"signature": "SQL Injection", "signature_id": 1000002,
-                  "category": "Web Attack", "severity": 1},
-    }))
+    eve.write_text(
+        json.dumps(
+            {
+                "timestamp": "2017-07-05T10:00:00+0000",
+                "event_type": "alert",
+                "src_ip": "45.33.32.156",
+                "dest_ip": "10.0.0.5",
+                "proto": "TCP",
+                "alert": {
+                    "signature": "SQL Injection",
+                    "signature_id": 1000002,
+                    "category": "Web Attack",
+                    "severity": 1,
+                },
+            }
+        )
+    )
 
     published = []
 
@@ -1237,7 +1275,9 @@ async def test_replay_publishes_alerts(tmp_path, pg_session):
         published.append(payload)
 
     result = await run_replay(
-        eve_path=eve, speed=1_000_000, session_factory=lambda: _Ctx(pg_session),
+        eve_path=eve,
+        speed=1_000_000,
+        session_factory=lambda: _Ctx(pg_session),
         on_alert=on_alert,
     )
     assert result["emitted"] == 1
@@ -1253,8 +1293,7 @@ async def test_replay_publishes_alerts(tmp_path, pg_session):
 
 ```python
 # backend/workers/replay.py
-async def run_replay(eve_path, *, speed=1.0, session_factory, on_alert=None,
-                     pipeline=None) -> dict:
+async def run_replay(eve_path, *, speed=1.0, session_factory, on_alert=None, pipeline=None) -> dict:
     """重放 eve.json：逐条解析 → 归一化 → 去重 → 落库 → 回调推送。
 
     为什么用回调（on_alert）而不是直接 import ws_manager：

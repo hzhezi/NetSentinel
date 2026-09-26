@@ -134,12 +134,12 @@ class UnifiedAlert:
     dst_ip: str
     dst_port: int | None
     protocol: str | None
-    signature: str         # Suricata 签名文本
+    signature: str  # Suricata 签名文本
     attack_type: str | None  # 归一化攻击类型
     severity: Literal["critical", "high", "medium", "low", "info"]
-    confidence: float      # 由 Suricata priority 映射而来
+    confidence: float  # 由 Suricata priority 映射而来
     category: str | None
-    raw: dict              # 原始 eve 事件（jsonb）
+    raw: dict  # 原始 eve 事件（jsonb）
     dedup_key: str
     status: Literal["new", "triaged", "escalated", "closed", "suppressed"]
 ```
