@@ -99,7 +99,11 @@ async def test_graph_records_token_usage():
 
 
 async def test_escalate_true_goes_through_investigation():
-    """escalate=True 时应经过调查分支（期 1 为占位节点）。"""
+    """escalate=True 时应经过调查分支。
+
+    未配置 investigator 时（本测试场景）降级为 needs_human_review，
+    但仍会落库 —— 告警不因调查器缺失而丢失。
+    """
     llm = FakeLLM(_result(escalate=True, confidence=40))
     persist = FakePersist()
     graph = build_triage_graph(llm=llm, persist=persist)
@@ -107,9 +111,10 @@ async def test_escalate_true_goes_through_investigation():
     out = await graph.ainvoke({"alert": {"id": "a1", "signature": "X"}})
 
     assert out["escalated"] is True
-    # 调查阶段是占位：本期不实现 L2，但路径已通，期 2 直接替换节点
-    assert out["investigation"] is None
-    assert len(persist.records) == 1
+    assert out["investigation"]["verdict"] == "needs_human_review"
+    # 两条记录：L1 分诊 + L2 降级
+    assert len(persist.records) == 2
+    assert {r["stage"] for r in persist.records} == {"triage", "investigation"}
 
 
 async def test_escalate_false_skips_investigation():
@@ -165,4 +170,5 @@ async def test_llm_failure_degrades_to_human_review():
     assert out["triage"]["escalate"] is True
     assert out["triage"]["error"] is not None
     # 关键：仍然落库了 —— 告警没有因为研判失败而消失
-    assert len(persist.records) == 1
+    # （L1 降级 + L2 降级，共两条）
+    assert len(persist.records) == 2

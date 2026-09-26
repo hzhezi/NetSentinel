@@ -59,9 +59,12 @@ class TriageState(TypedDict, total=False):
     alert: dict[str, Any]  # 输入：待研判的告警
     triage: dict[str, Any] | None  # 分诊结果
     escalated: bool  # 是否走了调查分支
-    investigation: dict | None  # L2 调查结果（期 1 为 None）
+    investigation: dict | None  # L2 调查结果
     usage: dict[str, int]  # token 用量
     persisted: bool  # 是否已落库
+    # 手动强制调查：即使 L1 判定不必升级也执行 L2。
+    # 这是 Human-in-the-loop 的入口 —— 分析人员可以推翻模型的"不必深入"。
+    force_investigate: bool
 
 
 def _should_escalate(triage: dict[str, Any]) -> bool:
@@ -82,9 +85,31 @@ def _should_escalate(triage: dict[str, Any]) -> bool:
     return triage.get("severity") in _FORCE_ESCALATE_SEVERITIES
 
 
+def _degraded_investigation(error: str) -> dict[str, Any]:
+    """构造降级的调查结论。
+
+    调查没能完成时使用：明确标注失败原因，结论交给人工 ——
+    **绝不因调查失败而让告警消失**（安全系统的基本要求）。
+    """
+    return {
+        "verdict": "needs_human_review",
+        "severity": "medium",
+        "confidence": 0,
+        "summary": f"深度调查未能完成，需人工复核。（原因：{error}）",
+        "mitre_techniques": [],
+        "recommended_actions": ["人工查看原始告警并结合其他信息判断"],
+        "attack_type": None,
+        "escalate": True,
+        "evidence_trail": [],
+        "iterations": 0,
+        "error": error,
+    }
+
+
 def build_triage_graph(
     llm: Any,
     persist: Callable[..., Awaitable[None]],
+    investigator: Any | None = None,
 ):
     """构建并编译研判图。
 
@@ -92,8 +117,11 @@ def build_triage_graph(
         llm: 具备 `triage(alert) -> TriageResult` 与 `last_usage` 的对象。
              依赖注入而非内部构造：测试可注入假客户端，
              也便于将来切换模型/供应商。
-        persist: 落库函数，签名 `(alert, triage, usage, error) -> None`。
+        persist: 落库函数，签名 `(alert, triage, stage, usage, error) -> None`。
                  同样用注入 —— 图不该知道数据存哪。
+        investigator: L2 调查器（具备 `investigate(alert)`）。
+                      None 表示未配置：升级路径会降级为 needs_human_review，
+                      **而不是让流水线崩掉**（可能只配了 L1 的 key）。
     """
 
     async def triage_node(state: TriageState) -> TriageState:
@@ -131,31 +159,86 @@ def build_triage_graph(
         triage["latency_ms"] = int((time.monotonic() - started) * 1000)
         # 在此写入 escalated 状态：条件边只负责"选路"，
         # 而"是否升级过"是需要被持久化/统计的事实，必须由节点写入状态。
+        #
+        # force_investigate 必须一并回传：LangGraph 用节点返回的 dict
+        # 做部分更新，但**没有显式回传的字段不会保留在后续节点的可见状态里**。
+        # 漏掉它会导致手动触发失效（条件边读不到该标志）。
         return {
             "triage": triage,
             "usage": usage,
-            "escalated": _should_escalate(triage),
+            "escalated": _should_escalate(triage) or bool(state.get("force_investigate")),
+            "force_investigate": state.get("force_investigate", False),
         }
 
     async def investigate_node(state: TriageState) -> TriageState:
-        """L2 深度调查节点（期 1 占位）。
+        """L2 深度调查节点：工具驱动的多轮调查。
 
-        期 2 会替换为真正的 Investigation Agent：
-        工具驱动的多轮调查 + evidence trail。
-        现在保留节点是为了**让图结构完整**，期 2 只替换实现，流程不动。
+        把 L1 的初步结论一并传给调查器作为上下文 ——
+        它已经做了一轮快速判断，L2 不必从零开始。
+
+        三种降级情形（都不让流水线崩掉）：
+            1. 未配置 investigator（可能只配了 L1 的 key）
+            2. 调查过程抛异常
+            3. 调查返回了失败结论（error 非空）
+        统一降级为 needs_human_review 并落库 —— 告警绝不能丢。
         """
-        log.info("investigate_placeholder", alert_id=state["alert"].get("id"))
-        return {"investigation": None}
+        alert = state["alert"]
+        l1_triage = state.get("triage") or {}
+
+        # 把 L1 结论附在告警上，供调查器参考
+        enriched_alert = dict(alert)
+        enriched_alert["l1_triage"] = {
+            "verdict": l1_triage.get("verdict"),
+            "severity": l1_triage.get("severity"),
+            "confidence": l1_triage.get("confidence"),
+            "summary": l1_triage.get("summary"),
+        }
+
+        if investigator is None:
+            log.info("investigator_not_configured", alert_id=alert.get("id"))
+            return {"investigation": _degraded_investigation("未配置深度调查器（缺失 LLM 配置）")}
+
+        try:
+            result = investigator.investigate(enriched_alert)
+            payload = {
+                "verdict": result.verdict,
+                "severity": result.severity,
+                "confidence": result.confidence,
+                "summary": result.summary,
+                "mitre_techniques": result.mitre_techniques,
+                "recommended_actions": result.recommended_actions,
+                "attack_type": result.attack_type,
+                "escalate": True,
+                "evidence_trail": result.evidence_trail,
+                "iterations": result.iterations,
+                "error": result.error,
+            }
+        except Exception as exc:
+            # 调查器 bug / API 故障：降级而非中断
+            log.warning(
+                "investigation_failed_degrading",
+                alert_id=alert.get("id"),
+                error=str(exc),
+            )
+            payload = _degraded_investigation(str(exc))
+
+        return {"investigation": payload}
 
     async def persist_node(state: TriageState) -> TriageState:
         """落库节点。
 
-        无论走哪条分支都会到达这里，因此落库是一个统一的收口点 ——
+        无论走哪条分支都会到达这里，因此落库是统一收口点 ——
         不会出现"某条分支忘了存"的情况。
+
+        保存两条记录（若走过调查）：
+            stage="triage"         L1 分诊结论
+            stage="investigation"  L2 调查结论 + 证据链
+        分开存而非合并，是为了保留"分级研判"的完整历史 ——
+        评测时能分别统计两级的准确率。
         """
-        triage = state.get("triage") or {}
         alert = state["alert"]
-        # 把耗时等信息一并交给持久化层
+        triage = state.get("triage") or {}
+
         await persist(
             alert,
             triage,
@@ -163,10 +246,29 @@ def build_triage_graph(
             usage=state.get("usage", {}),
             error=triage.get("error"),
         )
+
+        investigation = state.get("investigation")
+        if investigation:
+            # L2 的 token 用量已包含在 investigator 内部统计中，
+            # 这里不重复传 -- 传空 dict，由 repository 用默认值兜底
+            await persist(
+                alert,
+                investigation,
+                stage="investigation",
+                usage={},
+                error=investigation.get("error"),
+            )
+
         return {"persisted": True}
 
     def route_after_triage(state: TriageState) -> str:
-        """条件边：决定 triage 之后走哪条路。"""
+        """条件边：决定 triage 之后走哪条路。
+
+        force_investigate 优先：手动触发时不论 L1 结论如何都执行 L2。
+        这是 Human-in-the-loop 的入口 —— 分析人员可以推翻模型的"不必深入"。
+        """
+        if state.get("force_investigate"):
+            return "investigate"
         return "investigate" if _should_escalate(state.get("triage") or {}) else "persist"
 
     # ── 组装图 ────────────────────────────────────────────────

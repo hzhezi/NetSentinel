@@ -214,7 +214,7 @@ class InvestigationAgent:
                 step: dict[str, Any] = {
                     "type": "tool_call",
                     "tool": name,
-                    "call_id": call_id,   # 与模型的调用 ID 对应，便于对照审计
+                    "call_id": call_id,  # 与模型的调用 ID 对应，便于对照审计
                     "input": args,
                     "result": tool_result,
                 }
