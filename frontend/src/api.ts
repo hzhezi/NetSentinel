@@ -101,3 +101,44 @@ export const createSuppression = async (
 export const deleteSuppression = async (id: string): Promise<void> => {
   await api.delete(`/suppressions/${id}`);
 };
+
+// ── 评测结果 ──────────────────────────────────────────────────
+
+export interface EvalMetrics {
+  total: number;
+  agreement: number;
+  decisive_count?: number;
+  correct_count?: number;
+  needs_human_review_count: number;
+  needs_human_review_rate: number;
+  confusion: Record<string, Record<string, number>>;
+  total_tokens: number;
+  avg_latency_ms: number;
+}
+
+export interface EvalDetailItem {
+  scenario: string;
+  signature: string;
+  ground_truth: string;
+  predicted: string;
+  confidence?: number;
+  tools_used?: string[];
+  error?: string | null;
+}
+
+export interface EvalReport {
+  available: boolean;
+  message?: string;
+  run_at?: string;
+  sample_size?: number;
+  models?: { triage?: string | null; investigation?: string | null };
+  results?: {
+    l1?: { metrics: EvalMetrics; detail: EvalDetailItem[] };
+    l2?: { metrics: EvalMetrics; detail: EvalDetailItem[] };
+  };
+}
+
+export const fetchEvalReport = async (): Promise<EvalReport> => {
+  const { data } = await api.get<EvalReport>("/evaluation/report");
+  return data;
+};

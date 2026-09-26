@@ -4,10 +4,12 @@
 // 一条条出现在"实时告警流"页面。
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, message } from "antd";
+import { Button, Card, Form, Input, InputNumber, Select, Space, Typography, message } from "antd";
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchAvailableFiles, startReplay } from "../api";
+
+const { Text } = Typography;
 import { useAlertStream } from "../store";
 
 export default function FeedPage() {
@@ -47,15 +49,14 @@ export default function FeedPage() {
 
   return (
     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-      <Card title="数据重放控制">
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="说明"
-          description="系统按 eve.json 中记录的**事件原始时间戳**节奏重放告警，复现实时 IDS 的观感。倍速越高播放越快；单步等待有上限，因此长时间间隔不会卡住演示。"
-        />
-
+      <Card
+        title="数据重放"
+        extra={
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            按事件原始时间戳节奏重放，复现实时 IDS 观感
+          </Text>
+        }
+      >
         <Form
           form={form}
           layout="vertical"

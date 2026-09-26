@@ -14,6 +14,13 @@ import {
   useLocation,
 } from "react-router-dom";
 import { Badge, ConfigProvider, Layout, Menu, theme } from "antd";
+import {
+  AlertOutlined,
+  DashboardOutlined,
+  ExperimentOutlined,
+  PlayCircleOutlined,
+  StopOutlined,
+} from "@ant-design/icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { connectWs } from "./ws";
@@ -23,9 +30,10 @@ import AlertsPage from "./pages/AlertsPage";
 import AlertDetailPage from "./pages/AlertDetailPage";
 import FeedPage from "./pages/FeedPage";
 import SuppressionsPage from "./pages/SuppressionsPage";
+import EvaluationPage from "./pages/EvaluationPage";
 import type { Alert, WsMessage } from "./types";
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +44,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// 深色侧边栏 + 浅色内容区：视觉层次更清晰，
+// 也避免整个界面一片白显得单调。
+const SIDER_BG = "#001529";
 
 function Shell() {
   const location = useLocation();
@@ -65,47 +77,82 @@ function Shell() {
       ? "/feed"
       : location.pathname.startsWith("/suppressions")
         ? "/suppressions"
-        : "/";
+        : location.pathname.startsWith("/evaluation")
+          ? "/evaluation"
+          : "/";
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Header style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ color: "#fff", fontWeight: 600, fontSize: 18 }}>
-          NetSentinel
+      <Sider width={216} style={{ background: SIDER_BG }}>
+        <div
+          style={{
+            height: 64,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "0 20px",
+          }}
+        >
+          <ExperimentOutlined style={{ color: "#1677ff", fontSize: 22 }} />
+          <span style={{ color: "#fff", fontWeight: 600, fontSize: 17 }}>
+            NetSentinel
+          </span>
         </div>
-        <Badge
-          status={wsConnected ? "success" : "default"}
-          text={
-            <span style={{ color: "#rgba(255,255,255,.65)" }}>
-              {wsConnected ? "实时已连接" : "实时未连接"}
-            </span>
-          }
+        <Menu
+          mode="inline"
+          theme="dark"
+          selectedKeys={[selectedKey]}
+          style={{ background: "transparent", borderRight: 0 }}
+          items={[
+            {
+              key: "/",
+              icon: <DashboardOutlined />,
+              label: <Link to="/">仪表盘</Link>,
+            },
+            {
+              key: "/alerts",
+              icon: <AlertOutlined />,
+              label: <Link to="/alerts">实时告警</Link>,
+            },
+            {
+              key: "/feed",
+              icon: <PlayCircleOutlined />,
+              label: <Link to="/feed">数据重放</Link>,
+            },
+            {
+              key: "/evaluation",
+              icon: <ExperimentOutlined />,
+              label: <Link to="/evaluation">研判评测</Link>,
+            },
+            {
+              key: "/suppressions",
+              icon: <StopOutlined />,
+              label: <Link to="/suppressions">抑制规则</Link>,
+            },
+          ]}
         />
-      </Header>
+      </Sider>
+
       <Layout>
-        <Sider width={200} theme="light">
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedKey]}
-            style={{ height: "100%", borderRight: 0 }}
-            items={[
-              { key: "/", label: <Link to="/">仪表盘</Link> },
-              { key: "/alerts", label: <Link to="/alerts">实时告警</Link> },
-              { key: "/feed", label: <Link to="/feed">数据重放</Link> },
-              {
-                key: "/suppressions",
-                label: <Link to="/suppressions">抑制规则</Link>,
-              },
-            ]}
-          />
-        </Sider>
-        <Content style={{ padding: 16 }}>
+        <Content style={{ padding: 20, background: "#f5f7fa" }}>
+          {/* 连接状态放在内容区右上角，避免占用侧边栏空间 */}
+          <div style={{ textAlign: "right", marginBottom: 8 }}>
+            <Badge
+              status={wsConnected ? "success" : "default"}
+              text={
+                <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+                  {wsConnected ? "实时连接正常" : "实时连接中断（自动重连中）"}
+                </span>
+              }
+            />
+          </div>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/alerts/:id" element={<AlertDetailPage />} />
             <Route path="/feed" element={<FeedPage />} />
             <Route path="/suppressions" element={<SuppressionsPage />} />
+            <Route path="/evaluation" element={<EvaluationPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Content>
@@ -117,7 +164,16 @@ function Shell() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
+      <ConfigProvider
+        theme={{
+          algorithm: theme.defaultAlgorithm,
+          token: {
+            // 收紧默认圆角与字号，整体更紧凑利落
+            borderRadius: 6,
+            fontSize: 13,
+          },
+        }}
+      >
         <BrowserRouter>
           <Shell />
         </BrowserRouter>

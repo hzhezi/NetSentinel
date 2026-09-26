@@ -13,7 +13,13 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.v1.routes import alerts, feeds, statistics, suppressions
+from backend.api.v1.routes import (
+    alerts,
+    evaluation,
+    feeds,
+    statistics,
+    suppressions,
+)
 from backend.api.websocket.handlers import router as ws_router
 from backend.core.config import settings
 from backend.core.logging import setup_logging
@@ -62,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(feeds.router, prefix=f"{prefix}/feeds", tags=["feeds"])
     app.include_router(statistics.router, prefix=f"{prefix}/statistics", tags=["statistics"])
     app.include_router(suppressions.router, prefix=f"{prefix}/suppressions", tags=["suppressions"])
+    app.include_router(evaluation.router, prefix=f"{prefix}/evaluation", tags=["evaluation"])
     app.include_router(ws_router, tags=["websocket"])
 
     @app.get("/health", tags=["system"])
