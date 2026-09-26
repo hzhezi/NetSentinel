@@ -22,6 +22,7 @@ import DashboardPage from "./pages/DashboardPage";
 import AlertsPage from "./pages/AlertsPage";
 import AlertDetailPage from "./pages/AlertDetailPage";
 import FeedPage from "./pages/FeedPage";
+import SuppressionsPage from "./pages/SuppressionsPage";
 import type { Alert, WsMessage } from "./types";
 
 const { Header, Content, Sider } = Layout;
@@ -62,7 +63,9 @@ function Shell() {
     ? "/alerts"
     : location.pathname.startsWith("/feed")
       ? "/feed"
-      : "/";
+      : location.pathname.startsWith("/suppressions")
+        ? "/suppressions"
+        : "/";
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -89,6 +92,10 @@ function Shell() {
               { key: "/", label: <Link to="/">仪表盘</Link> },
               { key: "/alerts", label: <Link to="/alerts">实时告警</Link> },
               { key: "/feed", label: <Link to="/feed">数据重放</Link> },
+              {
+                key: "/suppressions",
+                label: <Link to="/suppressions">抑制规则</Link>,
+              },
             ]}
           />
         </Sider>
@@ -98,6 +105,7 @@ function Shell() {
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/alerts/:id" element={<AlertDetailPage />} />
             <Route path="/feed" element={<FeedPage />} />
+            <Route path="/suppressions" element={<SuppressionsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Content>
