@@ -1,0 +1,45 @@
+%YAML 1.1
+---
+# Suricata 配置（离线 pcap 分析专用）。
+#
+# 与在线 IDS 配置的差别：
+#   - 不配置 af-packet / pcap 抓包接口（离线用 -r 指定文件即可）
+#   - 不启用 IPS 模式（本项目明确不做阻断，见 AGENTS.md §2.2）
+#   - 输出只保留 alert（其余 flow/dns/http 事件本项目暂不消费，
+#     关掉可显著减小日志体积、降低磁盘压力）
+
+vars:
+  address-groups:
+    # HOME_NET 是"受保护网络"的定义。攻击方的 IP 通常不属于它。
+    # CICIDS2017 的受害主机在 192.168.10.0/24 网段。
+    HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+  port-groups:
+    HTTP_PORTS: "80"
+    HTTP_SERVERS: "$HOME_NET"
+    SSH_PORTS: "22"
+
+default-rule-path: /etc/suricata/rules
+
+rule-files:
+  - custom.rules
+
+# 关闭默认的直通规则集（AppLayer / decoder 等），
+# 只用我们自己的规则 —— 演示时告警来源清晰可控。
+# 若要扩充，可挂载 ET Open 规则并在此追加文件名。
+default-log-dir: /var/log/suricata
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      # 只输出 alert 事件（见文件顶部说明）
+      types:
+        - alert
+      # community-id 便于与其他工具（如 Zeek）关联，这里保留默认
+      community-id: false
+
+# 不加载默认规则/解码器事件，减少噪音
+stats:
+  enabled: no

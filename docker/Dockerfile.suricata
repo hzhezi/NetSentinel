@@ -1,0 +1,18 @@
+# Suricata 检测引擎镜像。
+#
+# 用 Alpine 包管理器装 Suricata，而非从源码编译 —— 快且够用。
+# 本镜像的用途是**离线读取 pcap**（suricata -r），不需要抓包能力，
+# 因此运行时不需要特权或 NET_RAW（与在线 IDS 部署不同）。
+FROM alpine:3.20
+
+RUN apk add --no-cache suricata tzdata && \
+    mkdir -p /var/log/suricata /data
+
+# 用项目自带的配置与规则
+COPY suricata/suricata.yaml /etc/suricata/suricata.yaml
+COPY suricata/rules/ /etc/suricata/rules/
+
+WORKDIR /data
+
+# 默认行为：打印版本（实际运行由 docker run 覆盖命令传入 pcap 路径）
+CMD ["suricata", "--version"]

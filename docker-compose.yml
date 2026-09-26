@@ -1,13 +1,17 @@
-# NetSentinel 本地依赖服务编排。
+# NetSentinel 本地服务编排。
 #
-# 当前只包含"外部依赖"（Postgres / Redis），应用本身（api / worker / web）
-# 留到 Task 21 再接入 —— 开发阶段应用跑在宿主机上，热重载更快。
+# 默认只起外部依赖（Postgres / Redis）—— 开发阶段应用跑在宿主机上，热重载更快。
+# Suricata 用 profile 隔离，只在需要离线分析 pcap 时显式启用。
 #
 # 用法：
-#   docker compose up -d db redis      启动
-#   docker compose ps                  查看健康状态
-#   docker compose down                停止（保留数据）
-#   docker compose down -v             停止并删除数据卷
+#   docker compose up -d db redis                     启动依赖
+#   docker compose ps                                 查看健康状态
+#   docker compose down                               停止（保留数据）
+#   docker compose down -v                            停止并删除数据卷
+#
+#   # 用 Suricata 离线分析 pcap（产出 eve.json 供系统重放）
+#   docker compose --profile suricata run --rm suricata \
+#       suricata -r /data/raw/your.pcap -l /data/logs
 
 services:
   db:
@@ -46,6 +50,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Suricata 检测引擎。
+  #
+  # 用 profile 隔离：默认 `up` 不会启动它，避免"只想改后端却要等 Suricata 构建"。
+  #
+  # 离线模式（suricata -r <pcap>）**不需要**特权与 NET_RAW ——
+  # 本项目不做在线抓包（见 AGENTS.md §2.2），因此这里刻意不加特权，
+  # 遵循最小权限原则，也规避 Mac 上 Docker 的网络能力限制。
+  suricata:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.suricata
+    container_name: netsentinel-suricata
+    profiles: ["suricata"]
+    volumes:
+      # 挂载项目 data 目录：pcap 从这里读，eve.json 往这里写
+      - ./data:/data
+      - ./suricata/suricata.yaml:/etc/suricata/suricata.yaml:ro
+      - ./suricata/rules:/etc/suricata/rules:ro
 
 # 命名卷：数据存在 Docker 管理的位置，
 # 这样 `docker compose down`（不带 -v）不会丢数据。
