@@ -142,3 +142,42 @@ export const fetchEvalReport = async (): Promise<EvalReport> => {
   const { data } = await api.get<EvalReport>("/evaluation/report");
   return data;
 };
+
+// ── 安全日报 ──────────────────────────────────────────────────
+
+export interface DailyReport {
+  report: string;
+  generated_by_llm: boolean;
+  error: string | null;
+  stats: {
+    period_start: string;
+    period_end: string;
+    alerts: {
+      total: number;
+      by_severity: Record<string, number>;
+      by_attack_type: Record<string, number>;
+      top_sources: Array<{ src_ip: string; count: number }>;
+    };
+    triage: {
+      by_verdict: Record<string, number>;
+      total_tokens: number;
+      avg_latency_ms: number;
+    };
+    notable_alerts: Array<{
+      signature: string;
+      severity: string;
+      src_ip: string;
+      dst_ip: string;
+      verdict: string;
+    }>;
+    suppressed_count: number;
+  };
+}
+
+export const fetchDailyReport = async (hours = 24): Promise<DailyReport> => {
+  const { data } = await api.get<DailyReport>("/reports/daily", {
+    params: { hours },
+    timeout: 60000,
+  });
+  return data;
+};

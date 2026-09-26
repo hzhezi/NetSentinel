@@ -17,6 +17,7 @@ from backend.api.v1.routes import (
     alerts,
     evaluation,
     feeds,
+    reports,
     statistics,
     suppressions,
 )
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(statistics.router, prefix=f"{prefix}/statistics", tags=["statistics"])
     app.include_router(suppressions.router, prefix=f"{prefix}/suppressions", tags=["suppressions"])
     app.include_router(evaluation.router, prefix=f"{prefix}/evaluation", tags=["evaluation"])
+    app.include_router(reports.router, prefix=f"{prefix}/reports", tags=["reports"])
     app.include_router(ws_router, tags=["websocket"])
 
     @app.get("/health", tags=["system"])

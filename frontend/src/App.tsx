@@ -31,6 +31,7 @@ import AlertDetailPage from "./pages/AlertDetailPage";
 import FeedPage from "./pages/FeedPage";
 import SuppressionsPage from "./pages/SuppressionsPage";
 import EvaluationPage from "./pages/EvaluationPage";
+import ReportsPage from "./pages/ReportsPage";
 import type { Alert, WsMessage } from "./types";
 
 const { Content, Sider } = Layout;
@@ -153,6 +154,7 @@ function Shell() {
             <Route path="/feed" element={<FeedPage />} />
             <Route path="/suppressions" element={<SuppressionsPage />} />
             <Route path="/evaluation" element={<EvaluationPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Content>
