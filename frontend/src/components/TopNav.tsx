@@ -4,7 +4,7 @@
 // 比侧边栏更扁平、更适合"仪表盘"类应用（内容区更宽）。
 
 import { Link, useLocation } from "react-router-dom";
-import { Badge, Layout, Space } from "antd";
+import { Badge, Layout } from "antd";
 import {
   AlertOutlined,
   DashboardOutlined,
@@ -52,7 +52,7 @@ export function TopNav({ wsConnected }: { wsConnected: boolean }) {
       }}
     >
       {/* 左侧：Logo */}
-      <Space size={10} style={{ minWidth: 200 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 200 }}>
         <div
           style={{
             width: 34,
@@ -69,10 +69,13 @@ export function TopNav({ wsConnected }: { wsConnected: boolean }) {
         <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: 0.3 }}>
           NetSentinel
         </span>
-      </Space>
+      </div>
 
-      {/* 中间：导航 */}
-      <Space size={4}>
+      {/* 中间：导航。
+          不用 antd 的 Space —— 它会为每个子项包一层 div，
+          导致导航项的固定高度/居中被外层容器干扰，
+          高亮胶囊会溢出 Header 边界（实测踩到）。 */}
+      <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {NAV.map((item) => {
           const isActive = active === item.key;
           return (
@@ -82,14 +85,20 @@ export function TopNav({ wsConnected }: { wsConnected: boolean }) {
               style={{
                 display: "flex",
                 alignItems: "center",
+                justifyContent: "center",
                 gap: 6,
-                padding: "8px 14px",
+                // 固定高度 38px：Header 高 64px，上下各留 13px 余量，
+                // 高亮胶囊不会越过边界
+                height: 38,
+                padding: "0 14px",
                 borderRadius: 8,
                 fontSize: 14,
+                lineHeight: 1,
                 fontWeight: isActive ? 600 : 400,
                 color: isActive ? "#1f8a5f" : "#595959",
                 background: isActive ? "#eafaf2" : "transparent",
-                transition: "all .15s",
+                transition: "background .15s, color .15s",
+                boxSizing: "border-box",
               }}
             >
               {item.icon}
@@ -97,7 +106,7 @@ export function TopNav({ wsConnected }: { wsConnected: boolean }) {
             </Link>
           );
         })}
-      </Space>
+      </nav>
 
       {/* 右侧：连接状态 */}
       <div style={{ minWidth: 150, textAlign: "right" }}>
