@@ -38,6 +38,8 @@ data/*
 *.parquet
 *.jsonl
 !data/**/README.md
+# 评测结果是报告素材：体积小（几十 KB）且需长期留存与追溯
+!data/eval/*.json
 !data/**/experiment_*.json
 datasets/
 logs/

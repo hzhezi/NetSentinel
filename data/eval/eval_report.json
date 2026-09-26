@@ -1,0 +1,341 @@
+{
+  "run_at": "2026-09-26T13:17:28.064063+00:00",
+  "models": {
+    "triage": "deepseek-chat",
+    "investigation": "deepseek-reasoner"
+  },
+  "sample_size": 9,
+  "results": {
+    "l1": {
+      "metrics": {
+        "total": 9,
+        "agreement": 0.0,
+        "decisive_count": 0,
+        "correct_count": 0,
+        "needs_human_review_count": 9,
+        "needs_human_review_rate": 1.0,
+        "confusion": {},
+        "total_tokens": 7380,
+        "avg_latency_ms": 0
+      },
+      "detail": [
+        {
+          "scenario": "ssh_brute_force",
+          "signature": "SSH Brute Force Attempt",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 45,
+          "summary": "IDS 上报一条针对内网主机 192.168.10.12:22 的 SSH 暴力破解告警，源 IP 为 45.33.32.156（公网地址）。告警本身未提供失败登录次数、时间窗口、是否成功认证、账号列表等关键信息，无法判断是真实爆破、误报还是已成功入侵。建议结合 SSH 认证日志与源 IP 信誉做进一步核实。",
+          "error": null,
+          "prompt_tokens": 511,
+          "completion_tokens": 290,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "tcp_scan",
+          "signature": "TCP Port Scan Detected",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 45,
+          "summary": "IDS 上报来自 45.33.32.156 对 192.168.10.5:25 的 TCP 端口扫描告警。告警仅提供单个源端口与单个目标端口，无法确认是真正的多端口扫描还是单次连接被误判，也缺少扫描范围、频次、是否成功建连等关键信息。源 IP 为公网地址，目标为内网主机且端口为 SMTP，存在被探测或投递垃圾邮件的可能，建议人工核实。",
+          "error": null,
+          "prompt_tokens": 521,
+          "completion_tokens": 300,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "icmp_sweep",
+          "signature": "ICMP Ping Sweep Detected",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 45,
+          "summary": "IDS 检测到来自外部 IP 45.33.32.156 对 192.168.10.11 的 ICMP Ping Sweep 告警，协议为 ICMP，源/目标端口均为 0。单条告警仅显示一个目标 IP，无法确认是否真的存在多目标扫描行为，也无法判断该源 IP 是否为已知扫描源或内部资产。证据不足以定性，建议人工核查。",
+          "error": null,
+          "prompt_tokens": 523,
+          "completion_tokens": 277,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "sql_injection_or",
+          "signature": "Possible SQL Injection (OR 1=1)",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 40,
+          "summary": "IDS 在目标 192.168.10.5:80 上检测到来自公网 IP 45.33.32.156 的疑似 SQL 注入特征（OR 1=1）。告警仅提供五元组与签名，缺少 HTTP 请求原文、URI/参数、响应码与返回内容，无法判断是真实注入尝试、扫描器探测还是误报。目标为内网 Web 服务，若可达则存在被利用风险，建议人工核查。",
+          "error": null,
+          "prompt_tokens": 523,
+          "completion_tokens": 290,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "log4shell",
+          "signature": "Log4Shell JNDI Injection Attempt (CVE-2021-44228)",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "high",
+          "confidence": 45,
+          "summary": "IDS 在 45.33.32.156:56900 到内网 192.168.10.5:8080 的 TCP 流量中命中 Log4Shell JNDI 注入特征。告警本身未提供 payload 内容、HTTP 请求路径、目标服务是否使用 Log4j 及是否已回连等关键信息，无法确认利用是否成功。源 IP 为公网地址，目标为内网 Web 服务端口，具备真实攻击面，建议按可疑事件升级核查。",
+          "error": null,
+          "prompt_tokens": 535,
+          "completion_tokens": 321,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "sql_injection",
+          "signature": "Possible SQL Injection (UNION SELECT)",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 40,
+          "summary": "IDS 在目标 192.168.10.5:80 上检测到来自外部 IP 45.33.32.156 的疑似 UNION SELECT SQL 注入特征。告警仅提供五元组与签名，缺少 HTTP 请求原文、URI/参数、响应码与返回内容，无法确认注入是否成功或是否被 WAF 拦截。源 IP 为公网地址，若目标为对外 Web 服务，则属于典型的外部自动化扫描/攻击流量。",
+          "error": null,
+          "prompt_tokens": 521,
+          "completion_tokens": 294,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "xss",
+          "signature": "Possible XSS Attempt (script tag in URI)",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 35,
+          "summary": "IDS 在目标 192.168.10.5:80 的 HTTP 请求 URI 中检测到疑似 <script> 标签，源 IP 为 45.33.32.156（公网地址）。告警仅提供五元组与签名名称，缺少完整 URI、HTTP 方法、响应码、User-Agent 及是否成功利用等关键信息，无法判定是真实攻击、扫描探测还是误报。建议人工调取原始流量与 Web 日志后再定性。",
+          "error": null,
+          "prompt_tokens": 523,
+          "completion_tokens": 298,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "directory_traversal",
+          "signature": "Directory Traversal Attempt (/etc/passwd)",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "medium",
+          "confidence": 45,
+          "summary": "IDS 检测到来自外部 IP 45.33.32.156 对内部 Web 服务器 192.168.10.5:80 的目录遍历尝试，目标为 /etc/passwd。告警本身仅提供五元组与签名，未包含 HTTP 请求原文、响应码或返回内容，无法确认攻击是否成功或是否被 WAF 拦截。建议人工核查 Web 访问日志后再定性。",
+          "error": null,
+          "prompt_tokens": 525,
+          "completion_tokens": 294,
+          "latency_ms": 0
+        },
+        {
+          "scenario": "reverse_shell",
+          "signature": "Possible Reverse Shell (/bin/bash interactive)",
+          "ground_truth": "true_positive",
+          "predicted": "needs_human_review",
+          "model_severity": "high",
+          "confidence": 55,
+          "summary": "内网主机 192.168.10.5 向公网 45.33.32.156 的 4444 端口发起 TCP 连接，命中「/bin/bash 交互式反弹 shell」签名。4444 是 Metasploit 默认反弹 shell 端口，且目标为公网地址，行为高度可疑。但告警本身未提供进程、命令行或载荷内容，无法确认是否真实反弹 shell，需人工核实。",
+          "error": null,
+          "prompt_tokens": 528,
+          "completion_tokens": 306,
+          "latency_ms": 0
+        }
+      ]
+    },
+    "l2": {
+      "metrics": {
+        "total": 9,
+        "agreement": 1.0,
+        "decisive_count": 9,
+        "correct_count": 9,
+        "needs_human_review_count": 0,
+        "needs_human_review_rate": 0.0,
+        "confusion": {
+          "true_positive": {
+            "true_positive": 9
+          }
+        },
+        "total_tokens": 76615,
+        "avg_latency_ms": 8125
+      },
+      "detail": [
+        {
+          "scenario": "ssh_brute_force",
+          "signature": "SSH Brute Force Attempt",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "high",
+          "confidence": 88,
+          "summary": "源 IP 45.33.32.156（美国 Dallas，Linode LLC）被威胁情报标记为 malicious，abuse 评分 87，类别含 scanner/brute-force，确实对 192.168.10.12（critical 级 PostgreSQL 核心数据库服务器）的 22 端口发起 SSH 暴力破解。该源 IP 还关联 7 条告警，同一来源在同一时间窗内叠加了 ICMP 扫描、SQL 注入、Log4Shell、XSS、目录遍历等攻击，说明这不是孤立扫描，而是针对该资产的多阶段攻击链。",
+          "iterations": 5,
+          "tools_used": [
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts",
+            "get_alert_detail"
+          ],
+          "error": null,
+          "prompt_tokens": 7189,
+          "completion_tokens": 1427,
+          "latency_ms": 7012
+        },
+        {
+          "scenario": "tcp_scan",
+          "signature": "TCP Port Scan Detected",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "critical",
+          "confidence": 93,
+          "summary": "源 IP 45.33.32.156 被威胁情报标记为恶意（abuse_score 87，类别 scanner/brute-force，Linode 主机），且同一源 IP 在关联告警中触发 7 条事件，涵盖 SSH 暴力破解、端口扫描以及针对 Web 的 SQL 注入、Log4Shell JNDI 注入、XSS、目录遍历等关键级别攻击。目标 192.168.10.5 是 criticality 为 high 的对外 Web 业务服务器，说明这不是孤立扫描而是针对重要资产的持续多步攻击。注意：本告警 dst_port 为 25(SMTP)，与资产声明的 http/https 服务不符，可能存在端口重定向、扫描器混合探测或资产信息不全。",
+          "iterations": 5,
+          "tools_used": [
+            "lookup_ip_reputation",
+            "get_alert_detail",
+            "get_asset_context",
+            "get_related_alerts"
+          ],
+          "error": null,
+          "prompt_tokens": 6871,
+          "completion_tokens": 1573,
+          "latency_ms": 9202
+        },
+        {
+          "scenario": "icmp_sweep",
+          "signature": "ICMP Ping Sweep Detected",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "high",
+          "confidence": 90,
+          "summary": "源 IP 45.33.32.156（美国 Dallas，Linode LLC）被威胁情报标记为恶意，abuse_score 87，类别含 scanner/brute-force，其行为与情报一致。该源 IP 在关联告警中另有 7 条记录，构成完整的侦察到利用攻击链：TCP 端口扫描、ICMP Ping Sweep、SSH 暴力破解，以及 Log4Shell JNDI 注入、SQL 注入（UNION SELECT）、XSS、目录遍历等高危利用尝试。目标 192.168.10.11 在资产库中无记录，其重要性未知，属判断严重度的不确定因素。",
+          "iterations": 5,
+          "tools_used": [
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts",
+            "get_alert_detail"
+          ],
+          "error": null,
+          "prompt_tokens": 7195,
+          "completion_tokens": 1211,
+          "latency_ms": 6714
+        },
+        {
+          "scenario": "sql_injection_or",
+          "signature": "Possible SQL Injection (OR 1=1)",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "critical",
+          "confidence": 90,
+          "summary": "源 IP 45.33.32.156 被威胁情报标记为恶意（abuse_score 87，类别 scanner/brute-force），且对同一目标 192.168.10.5（对外 Web 业务服务器，criticality=high）在短时间内产生 7 条关联告警，涵盖端口扫描、ICMP 扫描、SSH 暴力破解、SQL 注入（OR 1=1、UNION SELECT）、XSS 与目录遍历，呈现典型的自动化扫描加 Web 攻击链。攻击目标为高价值对外业务系统，一旦注入成功影响面大，判定为真实攻击而非误报。",
+          "iterations": 5,
+          "tools_used": [
+            "get_alert_detail",
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts"
+          ],
+          "error": null,
+          "prompt_tokens": 6806,
+          "completion_tokens": 1315,
+          "latency_ms": 7644
+        },
+        {
+          "scenario": "log4shell",
+          "signature": "Log4Shell JNDI Injection Attempt (CVE-2021-44228)",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "critical",
+          "confidence": 90,
+          "summary": "外部 IP 45.33.32.156（情报标记 malicious，abuse_score 87，类别 scanner/brute-force）对承载主要业务系统的对外 Web 服务器 192.168.10.5:8080 发起 Log4Shell JNDI 注入尝试；同一源 IP 在短时间内还触发了端口扫描、SSH 暴力破解、SQL 注入、XSS、目录遍历等 7 条关联告警，呈现明显的多步扫描与漏洞利用特征，非误报。攻击是否已成功执行（如 JNDI 回连、后续落地）尚未确认。",
+          "iterations": 5,
+          "tools_used": [
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts",
+            "get_alert_detail"
+          ],
+          "error": null,
+          "prompt_tokens": 7295,
+          "completion_tokens": 1475,
+          "latency_ms": 7659
+        },
+        {
+          "scenario": "sql_injection",
+          "signature": "Possible SQL Injection (UNION SELECT)",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "high",
+          "confidence": 85,
+          "summary": "源 IP 45.33.32.156（美国 Dallas，Linode LLC）在威胁情报中被标记为 malicious（abuse_score 87，类别 scanner/brute-force），且同源关联 7 条告警，涵盖端口扫描、ICMP 扫描、SSH 暴力破解、多类 SQL 注入（OR 1=1 与 UNION SELECT）、Log4Shell 尝试和目录遍历，显示为针对性多阶段扫描与利用尝试而非误报。目标 192.168.10.5 是对外提供业务的主要 Web 服务器（criticality: high），但工具未返回 HTTP 请求/响应细节，无法确认注入是否成功或数据是否泄露。",
+          "iterations": 5,
+          "tools_used": [
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_alert_detail",
+            "get_related_alerts"
+          ],
+          "error": null,
+          "prompt_tokens": 6915,
+          "completion_tokens": 1445,
+          "latency_ms": 7582
+        },
+        {
+          "scenario": "xss",
+          "signature": "Possible XSS Attempt (script tag in URI)",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "critical",
+          "confidence": 88,
+          "summary": "源 IP 45.33.32.156 在威胁情报中标记为 malicious（abuse_score 87，类别 scanner/brute-force，Linode 主机），且与 7 条同源关联告警构成完整的多步攻击链：SSH 暴力破解、TCP 端口扫描、ICMP 扫描、两次 SQL 注入、一次 Log4Shell JNDI 注入（CVE-2021-44228）以及本次 XSS。目标 192.168.10.5 是对外 Web 应用服务器，criticality 为 high（承载主要业务系统，被攻陷影响面大），因此该 XSS 告警不是孤立的低危噪音，而是持续针对高价值资产的自动化漏洞扫描/利用行为的一部分。",
+          "iterations": 5,
+          "tools_used": [
+            "get_alert_detail",
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts"
+          ],
+          "error": null,
+          "prompt_tokens": 6814,
+          "completion_tokens": 1520,
+          "latency_ms": 8801
+        },
+        {
+          "scenario": "directory_traversal",
+          "signature": "Directory Traversal Attempt (/etc/passwd)",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "critical",
+          "confidence": 92,
+          "summary": "源 IP 45.33.32.156 被威胁情报标记为恶意（abuse_score 87，类别 scanner/brute-force），且在短时间内对一个 critical 级别的对外 Web 服务器（192.168.10.5）产生 8 条关联告警，涵盖 SSH 暴力破解、端口扫描、ICMP 扫描、SQL 注入、Log4Shell JNDI 注入、XSS 与目录遍历。这明显是一次针对高价值业务系统的多手法自动化攻击/漏洞扫描，非孤立事件。本告警只是整条攻击链中的一环，且无法排除部分尝试已成功。",
+          "iterations": 5,
+          "tools_used": [
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts",
+            "get_alert_detail"
+          ],
+          "error": null,
+          "prompt_tokens": 7327,
+          "completion_tokens": 1354,
+          "latency_ms": 7428
+        },
+        {
+          "scenario": "reverse_shell",
+          "signature": "Possible Reverse Shell (/bin/bash interactive)",
+          "ground_truth": "true_positive",
+          "predicted": "true_positive",
+          "model_severity": "critical",
+          "confidence": 82,
+          "summary": "内网高价值资产 192.168.10.5（对外 Web 应用服务器，criticality=high）向外部 45.33.32.156 的 4444 端口发起 TCP 出站连接，告警签名为 Possible Reverse Shell (/bin/bash interactive)，4444 为典型的反弹 shell/Meterpreter 监听端口。目的地 IP 信誉结果为 malicious（abuse_score 87，Linode LLC，类别 scanner/brute-force，多情报源标记恶意），且存在同源同签名的关联告警 eval-8，提示该外联行为并非偶发。综合判断极可能是 Web 服务器已被植入后门并与外部 C2 建立反弹 shell 会话；注意告警 category 字段（'suspicious username login'）与 signature 描述不一致，可能是日志归类错误，但不影响外联行为本身的风险判定。",
+          "iterations": 5,
+          "tools_used": [
+            "get_alert_detail",
+            "lookup_ip_reputation",
+            "get_asset_context",
+            "get_related_alerts"
+          ],
+          "error": null,
+          "prompt_tokens": 6582,
+          "completion_tokens": 2301,
+          "latency_ms": 11084
+        }
+      ]
+    }
+  }
+}

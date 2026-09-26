@@ -47,10 +47,13 @@ scan_file() {
     # 1. 已知供应商的 key 前缀（最可靠：这些前缀本身就是"这是密钥"的标记）
     if echo "$line" | grep -qE '(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})'; then
       hit="API key 前缀"
-    # 2. 变量名含敏感词且赋了非空值
-    #    注意排除空值（`KEY=`）与我们自己的占位写法
-    elif echo "$line" | grep -qiE '^[[:space:]]*(export[[:space:]]+)?[A-Z_]*(SECRET|PASSWORD|PASSWD|TOKEN|API_?KEY|PRIVATE_?KEY)[A-Z_]*[[:space:]]*=[[:space:]]*[^[:space:]#]+' \
-         && ! echo "$line" | grep -qE '=[[:space:]]*$'; then
+    # 2. 变量名含敏感词且赋了"看起来像密钥的值"
+    #    收紧规则的原因（真实误报）：`tokens = sum(...)` 这类
+    #    普通代码曾被误判为密钥赋值 —— 变量名含 TOKEN 就命中的话
+    #    会频繁误报，最终导致人们绕过检查（比不检查更糟）。
+    #    现在要求：变量名是**全大写**（环境变量风格）+ 值有密钥特征
+    elif echo "$line" | grep -qE '^[[:space:]]*(export[[:space:]]+)?[A-Z_]*(SECRET|PASSWORD|PASSWD|TOKEN|API_?KEY|PRIVATE_?KEY)[A-Z_]*[[:space:]]*=[[:space:]]*["'\'']?[A-Za-z0-9_\-]{16,}' \
+         && ! echo "$line" | grep -qE '=[[:space:]]*["'\'']?[[:space:]]*$'; then
       hit="疑似密钥变量被赋值"
     fi
 

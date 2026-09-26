@@ -1,0 +1,137 @@
+[
+  {
+    "scenario": "ssh_brute_force",
+    "alert": {
+      "signature": "SSH Brute Force Attempt",
+      "category": "",
+      "severity": "medium",
+      "src_ip": "45.33.32.156",
+      "src_port": 57038,
+      "dst_ip": "192.168.10.12",
+      "dst_port": 22,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.295574+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "tcp_scan",
+    "alert": {
+      "signature": "TCP Port Scan Detected",
+      "category": "Detection of a Network Scan",
+      "severity": "medium",
+      "src_ip": "45.33.32.156",
+      "src_port": 43917,
+      "dst_ip": "192.168.10.5",
+      "dst_port": 25,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.299788+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "icmp_sweep",
+    "alert": {
+      "signature": "ICMP Ping Sweep Detected",
+      "category": "Detection of a Network Scan",
+      "severity": "medium",
+      "src_ip": "45.33.32.156",
+      "src_port": 0,
+      "dst_ip": "192.168.10.11",
+      "dst_port": 0,
+      "protocol": "ICMP",
+      "detected_at": "2026-09-26T13:11:32.302142+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "sql_injection_or",
+    "alert": {
+      "signature": "Possible SQL Injection (OR 1=1)",
+      "category": "Web Application Attack",
+      "severity": "critical",
+      "src_ip": "45.33.32.156",
+      "src_port": 40792,
+      "dst_ip": "192.168.10.5",
+      "dst_port": 80,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.290395+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "log4shell",
+    "alert": {
+      "signature": "Log4Shell JNDI Injection Attempt (CVE-2021-44228)",
+      "category": "Attempted Administrator Privilege Gain",
+      "severity": "critical",
+      "src_ip": "45.33.32.156",
+      "src_port": 56900,
+      "dst_ip": "192.168.10.5",
+      "dst_port": 8080,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.290395+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "sql_injection",
+    "alert": {
+      "signature": "Possible SQL Injection (UNION SELECT)",
+      "category": "Web Application Attack",
+      "severity": "critical",
+      "src_ip": "45.33.32.156",
+      "src_port": 41780,
+      "dst_ip": "192.168.10.5",
+      "dst_port": 80,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.290395+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "xss",
+    "alert": {
+      "signature": "Possible XSS Attempt (script tag in URI)",
+      "category": "Web Application Attack",
+      "severity": "critical",
+      "src_ip": "45.33.32.156",
+      "src_port": 37340,
+      "dst_ip": "192.168.10.5",
+      "dst_port": 80,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.290395+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "directory_traversal",
+    "alert": {
+      "signature": "Directory Traversal Attempt (/etc/passwd)",
+      "category": "Attempted Information Leak",
+      "severity": "high",
+      "src_ip": "45.33.32.156",
+      "src_port": 40082,
+      "dst_ip": "192.168.10.5",
+      "dst_port": 80,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.290395+00:00"
+    },
+    "ground_truth": "true_positive"
+  },
+  {
+    "scenario": "reverse_shell",
+    "alert": {
+      "signature": "Possible Reverse Shell (/bin/bash interactive)",
+      "category": "An attempted login using a suspicious username was detected",
+      "severity": "high",
+      "src_ip": "192.168.10.5",
+      "src_port": 36126,
+      "dst_ip": "45.33.32.156",
+      "dst_port": 4444,
+      "protocol": "TCP",
+      "detected_at": "2026-09-26T13:11:32.290395+00:00"
+    },
+    "ground_truth": "true_positive"
+  }
+]
