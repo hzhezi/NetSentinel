@@ -181,3 +181,105 @@ class LLMClient:
         # 反复失败：明确报错，而不是返回一个"凑合"的结果。
         # 上层可将此告警标记为 needs_human_review 并记录，而非静默丢弃。
         raise LLMError(f"LLM 输出在 {self.max_retries + 1} 次尝试后仍不合规：{last_error}")
+
+    # ── 工具调用（供 Investigation Agent 使用）────────────────────
+
+    def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        force_final: bool = False,
+    ) -> dict[str, Any]:
+        """发起一次带工具定义的调用，返回解析后的意图。
+
+        返回值的 type 有三种：
+            "tool_call" —— 模型要调工具，附带 name/args/id
+            "final"     —— 模型给出最终结论，content 是 JSON 文本
+            "text"      —— 模型的中间推理文字（叙述性内容）
+
+        为什么要归一化成这几种：
+            不同供应商的工具调用响应结构差异较大。归一化后，
+            Investigation Agent 只处理这三种情况，与供应商解耦。
+
+        Args:
+            force_final: 最后一轮设为 True，通过 tool_choice 强制模型
+                         不再调工具而是给出结论 —— 保证调查一定收敛。
+        """
+        tool_defs = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
+            }
+            for t in tools
+        ]
+
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tool_defs,
+            "temperature": 0.1,
+        }
+        if force_final:
+            # 禁止再调工具，迫使模型输出结论文本。
+            # 这是"迭代上限"的执行手段：即使模型还想查，也必须收尾。
+            kwargs["tool_choice"] = "none"
+
+        try:
+            resp = self._client.chat.completions.create(**kwargs)
+        except APIError as exc:
+            raise LLMError(f"LLM 工具调用失败: {exc}") from exc
+
+        if resp.usage is not None:
+            self.last_usage = {
+                "prompt_tokens": resp.usage.prompt_tokens,
+                "completion_tokens": resp.usage.completion_tokens,
+            }
+
+        choice = resp.choices[0]
+        message = choice.message
+
+        # 优先检查工具调用（有些模型会同时给文字和工具调用）
+        if message.tool_calls:
+            call = message.tool_calls[0]
+            try:
+                args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                # 参数不是合法 JSON：交给工具层处理（run_tool 会返回 error）
+                args = {}
+            return {
+                "type": "tool_call",
+                "name": call.function.name,
+                "args": args,
+                "id": call.id,
+            }
+
+        content = (message.content or "").strip()
+
+        # 没有工具调用：判断这是最终结论还是中间推理。
+        # 判据：内容里是否含 JSON 对象且带 verdict 字段。
+        # 用这个判据而非"最后一轮"是因为模型可能提前给出结论。
+        if _looks_like_verdict(content):
+            return {"type": "final", "content": content}
+
+        # 最后一轮强制收尾：即使格式不完全规范也当结论处理，
+        # 让 InvestigationAgent 的解析与降级逻辑接手。
+        if force_final:
+            return {"type": "final", "content": content}
+
+        return {"type": "text", "content": content}
+
+
+def _looks_like_verdict(content: str) -> bool:
+    """判断模型输出是否像一条最终结论。
+
+    只看是否含 verdict 字段，不做严格校验 ——
+    严格校验由 InvestigationAgent 的 Pydantic/解析逻辑负责。
+    """
+    if "verdict" not in content:
+        return False
+    # 必须是 JSON 形态（含花括号），而不是叙述里恰好提到这个词
+    return "{" in content and "}" in content
