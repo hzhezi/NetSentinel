@@ -8,9 +8,17 @@ FROM alpine:3.20
 RUN apk add --no-cache suricata tzdata && \
     mkdir -p /var/log/suricata /data
 
-# 用项目自带的配置与规则
-COPY suricata/suricata.yaml /etc/suricata/suricata.yaml
+# 规则放到 /etc/suricata/rules/
 COPY suricata/rules/ /etc/suricata/rules/
+
+# 用项目自带配置覆盖默认配置。
+#
+# 注意：这份配置是**精简版**（apk 的默认配置本身也很精简）。
+# 关键要求写在 suricata.yaml 顶部的注释里：
+#   - HTTP_SERVERS 必须放在 address-groups（填网段），放 port-groups 会报错
+#   - 变量间引用（如 !$HOME_NET）在部分版本下解析失败，直接写明网段更稳
+#   - 规则必须单行，多行会导致 "Signature missing required value sid"
+COPY suricata/suricata.yaml /etc/suricata/suricata.yaml
 
 WORKDIR /data
 

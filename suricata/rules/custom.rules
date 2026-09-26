@@ -1,107 +1,35 @@
 # NetSentinel 自定义 Suricata 规则集。
 #
-# 规则写法参考 Suricata 官方文档与 IntruShield NIDS（MIT）的同类规则，
-# 但本文件为独立编写。sid 从 1000001 起，避开官方规则集占用的号段。
+# ⚠️ 格式要求：**每条规则必须写成单行**。
+#    多行（用 `(` 换行缩进）在 Suricata 7 下会解析失败，
+#    报错 "Signature missing required value sid" —— 因为引擎按行解析。
+#    这是实测踩过的坑。
 #
-# 覆盖攻击类型对应设计文档 §5.2 的规划：
-#   SSH 暴力破解 / SQL 注入 / Nmap 扫描 / Log4Shell / XSS /
-#   反弹 shell / DNS 隧道 / ICMP 扫描 / 目录穿越
+# sid 从 1000001 起，避开官方规则集占用的号段。
+# 字段说明见文末。
 #
-# 字段说明（便于后续扩充）：
-#   msg      —— 告警签名，最终显示在平台上
-#   flow     —— 会话方向（to_server 表示客户端→服务端）
-#   content  —— 载荷中的特征串；配合 http_uri 等修饰符限定位置
-#   threshold—— 同源计数，用于"短时间内多次"这类行为检测
-#   classtype—— 分类，影响平台的 category 字段
-#   sid      —— 规则唯一编号；rev 为修订号
-#   severity —— 该规则在平台上的严重度（1 最高，4 最低）
+# 覆盖的攻击类型（对应设计文档 §5.2）：
+#   SQL 注入 / 目录穿越 / XSS / Log4Shell / SSH 爆破 /
+#   Nmap 扫描 / TCP SYN 扫描 / ICMP 扫描 / 反弹 shell / DNS 隧道
 
-# ── Web 攻击 ─────────────────────────────────────────────────────
+alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (msg:"Possible SQL Injection (UNION SELECT)"; flow:established,to_server; content:"UNION"; http_uri; nocase; content:"SELECT"; http_uri; nocase; distance:0; classtype:web-application-attack; sid:1000001; rev:1;)
+alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (msg:"Possible SQL Injection (OR 1=1)"; flow:established,to_server; content:"' OR 1=1"; http_uri; nocase; classtype:web-application-attack; sid:1000002; rev:1;)
+alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (msg:"Directory Traversal Attempt (/etc/passwd)"; flow:established,to_server; content:"/etc/passwd"; http_uri; nocase; classtype:attempted-recon; sid:1000003; rev:1;)
+alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (msg:"Possible XSS Attempt (script tag in URI)"; flow:established,to_server; content:"<script"; http_uri; nocase; classtype:web-application-attack; sid:1000004; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"Log4Shell JNDI Injection Attempt (CVE-2021-44228)"; flow:established,to_server; content:"${jndi:"; nocase; classtype:attempted-admin; sid:1000005; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET $SSH_PORTS (msg:"SSH Brute Force Attempt"; flow:established,to_server; content:"SSH-"; depth:4; threshold:type limit, track by_src, count 5, seconds 60; classtype:attempted-login; sid:1000006; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"Nmap OS Detection Probe (multiple TCP flags)"; flags:FPU; classtype:network-scan; sid:1000007; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"TCP Port Scan Detected"; flags:S; threshold:type both, track by_src, count 30, seconds 10; classtype:network-scan; sid:1000009; rev:1;)
+alert icmp $EXTERNAL_NET any -> $HOME_NET any (msg:"ICMP Ping Sweep Detected"; itype:8; threshold:type both, track by_src, count 10, seconds 10; classtype:network-scan; sid:1000010; rev:1;)
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"Possible Reverse Shell (/bin/bash interactive)"; flow:established,to_server; content:"/bin/bash -i"; nocase; classtype:suspicious-login; sid:1000011; rev:1;)
+alert dns $HOME_NET any -> any 53 (msg:"Suspicious Large DNS TXT Query (possible tunneling)"; dsize:>200; classtype:bad-unknown; sid:1000012; rev:1;)
 
-# SQL 注入：UNION SELECT 组合。分两条 content 是为了提高特异性 ——
-# 只匹配 "UNION" 会误伤正常业务（如"union"作为普通单词）。
-alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (
-    msg:"Possible SQL Injection (UNION SELECT)";
-    flow:established,to_server;
-    content:"UNION"; http_uri; nocase;
-    content:"SELECT"; http_uri; nocase; distance:0;
-    classtype:web-application-attack; sid:1000001; rev:1;)
-
-# SQL 注入：经典的 OR 1=1 绕过
-alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (
-    msg:"Possible SQL Injection (OR 1=1)";
-    flow:established,to_server;
-    content:"' OR 1=1"; http_uri; nocase;
-    classtype:web-application-attack; sid:1000002; rev:1;)
-
-# 目录穿越：读取 /etc/passwd
-alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (
-    msg:"Directory Traversal Attempt (/etc/passwd)";
-    flow:established,to_server;
-    content:"/etc/passwd"; http_uri; nocase;
-    classtype:attempted-recon; sid:1000003; rev:1;)
-
-# XSS 探测：URI 中出现 script 标签
-alert http $EXTERNAL_NET any -> $HTTP_SERVERS $HTTP_PORTS (
-    msg:"Possible XSS Attempt (script tag in URI)";
-    flow:established,to_server;
-    content:"<script"; http_uri; nocase;
-    classtype:web-application-attack; sid:1000004; rev:1;)
-
-# Log4Shell (CVE-2021-44228)：JNDI 注入特征串。
-# 这个漏洞影响面广，至今仍有扫描器在尝试，值得单列一条规则。
-alert tcp $EXTERNAL_NET any -> $HOME_NET any (
-    msg:"Log4Shell JNDI Injection Attempt (CVE-2021-44228)";
-    flow:established,to_server;
-    content:"${jndi:"; nocase;
-    classtype:attempted-admin; sid:1000005; rev:1;)
-
-# ── 登录爆破 ─────────────────────────────────────────────────────
-
-# SSH 暴力破解：同一源 60 秒内 5 次以上连接尝试。
-# 用 threshold 而非纯 content —— "多次尝试"必须靠计数才能表达，
-# 这也是单流特征的 ML 模型做不到、而规则引擎擅长的地方。
-alert tcp $EXTERNAL_NET any -> $HOME_NET $SSH_PORTS (
-    msg:"SSH Brute Force Attempt";
-    flow:established,to_server;
-    content:"SSH-"; depth:4;
-    threshold:type limit, track by_src, count 5, seconds 60;
-    classtype:attempted-login; sid:1000006; rev:1;)
-
-# ── 扫描 ─────────────────────────────────────────────────────────
-
-# Nmap OS 探测：同时置多个 TCP 标志位是典型特征（正常连接不会这样）
-alert tcp $EXTERNAL_NET any -> $HOME_NET any (
-    msg:"Nmap OS Detection Probe";
-    flags:A,U,P,S,F;
-    classtype:network-scan; sid:1000007; rev:1;)
-
-# ICMP 扫描：10 秒内 10 个以上回显请求
-alert icmp $EXTERNAL_NET any -> $HOME_NET any (
-    msg:"ICMP Ping Sweep Detected";
-    itype:8;
-    threshold:type both, track by_src, count 10, seconds 10;
-    classtype:network-scan; sid:1000008; rev:1;)
-
-# TCP SYN 扫描：短时间大量 SYN（PortScan 的核心特征）
-alert tcp $EXTERNAL_NET any -> $HOME_NET any (
-    msg:"TCP Port Scan Detected";
-    flags:S;
-    threshold:type both, track by_src, count 30, seconds 10;
-    classtype:network-scan; sid:1000009; rev:1;)
-
-# ── 后渗透 / 外传 ─────────────────────────────────────────────────
-
-# 反弹 shell：出站连接中包含交互式 shell 启动命令
-alert tcp $HOME_NET any -> $EXTERNAL_NET any (
-    msg:"Possible Reverse Shell (/bin/bash interactive)";
-    flow:established,to_server;
-    content:"/bin/bash -i"; nocase;
-    classtype:suspicious-login; sid:1000010; rev:1;)
-
-# DNS 隧道嫌疑：超大 TXT 查询
-alert dns $HOME_NET any -> any 53 (
-    msg:"Suspicious Large DNS TXT Query (possible tunneling)";
-    content:"|00 10|"; offset:2; depth:2;
-    dsize:>200;
-    classtype:bad-unknown; sid:1000011; rev:1;)
+# ── 字段说明（便于后续扩充）────────────────────────────────────
+#   msg        告警签名，最终显示在平台上
+#   flow       会话方向（to_server = 客户端→服务端）
+#   content    载荷特征串；配合 http_uri 等修饰符限定位置
+#   threshold  同源计数，用于"短时间内多次"这类行为检测
+#              （这正是单条流特征做不到、而规则引擎擅长的地方）
+#   flags      TCP 标志位匹配（多标志同时置位是扫描的典型特征）
+#   classtype  分类，影响平台的 category 字段
+#   sid        规则唯一编号；rev 为修订号

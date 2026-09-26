@@ -2,21 +2,33 @@
 ---
 # Suricata 配置（离线 pcap 分析专用）。
 #
-# 与在线 IDS 配置的差别：
-#   - 不配置 af-packet / pcap 抓包接口（离线用 -r 指定文件即可）
+# ⚠️ 两个实测踩过的坑，改配置时注意：
+#
+#   1. **HTTP_SERVERS 属于 address-groups，不是 port-groups**
+#      它填的是网段。放进 port-groups 会报
+#      "failed to parse port \"192.168.0.0/16\""。
+#
+#   2. **变量分组会影响解析顺序**
+#      `$EXTERNAL_NET` 用 `!$HOME_NET` 的否定引用在部分版本下
+#      解析失败（报 HOME_NET 未定义）。这里直接写明网段，
+#      避免变量间引用 —— 更啰嗦但可靠。
+#
+# 与在线 IDS 的差别：
+#   - 不配 af-packet 抓包接口（离线用 -r 指定文件）
 #   - 不启用 IPS 模式（本项目明确不做阻断，见 AGENTS.md §2.2）
-#   - 输出只保留 alert（其余 flow/dns/http 事件本项目暂不消费，
-#     关掉可显著减小日志体积、降低磁盘压力）
+#   - 输出只保留 alert（其余事件本项目暂不消费，可显著减小日志）
 
 vars:
   address-groups:
-    # HOME_NET 是"受保护网络"的定义。攻击方的 IP 通常不属于它。
-    # CICIDS2017 的受害主机在 192.168.10.0/24 网段。
+    # 受保护网络。攻击方 IP 通常不在其中。
     HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
-    EXTERNAL_NET: "!$HOME_NET"
+    # 直接写明网段而非 `!$HOME_NET`，避免变量间引用的解析问题
+    EXTERNAL_NET: "[1.0.0.0/8,45.0.0.0/8,104.0.0.0/8,185.0.0.0/8,198.51.100.0/24,203.0.113.0/24,192.0.2.0/24]"
+    # 注意：HTTP_SERVERS 是地址组（填网段），不是端口组
+    HTTP_SERVERS: "[192.168.0.0/16,10.0.0.0/8]"
   port-groups:
-    HTTP_PORTS: "80"
-    HTTP_SERVERS: "$HOME_NET"
+    # 端口组只放端口号
+    HTTP_PORTS: "80,8080"
     SSH_PORTS: "22"
 
 default-rule-path: /etc/suricata/rules
@@ -24,9 +36,6 @@ default-rule-path: /etc/suricata/rules
 rule-files:
   - custom.rules
 
-# 关闭默认的直通规则集（AppLayer / decoder 等），
-# 只用我们自己的规则 —— 演示时告警来源清晰可控。
-# 若要扩充，可挂载 ET Open 规则并在此追加文件名。
 default-log-dir: /var/log/suricata
 
 outputs:
@@ -34,12 +43,10 @@ outputs:
       enabled: yes
       filetype: regular
       filename: eve.json
-      # 只输出 alert 事件（见文件顶部说明）
+      # 只输出 alert（见文件顶部说明）
       types:
         - alert
-      # community-id 便于与其他工具（如 Zeek）关联，这里保留默认
-      community-id: false
 
-# 不加载默认规则/解码器事件，减少噪音
+# 关闭统计输出：减少噪音，演示与测试都不需要
 stats:
   enabled: no
