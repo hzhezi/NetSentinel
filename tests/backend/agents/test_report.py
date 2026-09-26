@@ -13,7 +13,6 @@
        而不是什么都不产出 —— 日报有基础内容也好过没有。
 """
 
-
 import pytest
 
 from backend.agents.report import ReportAgent, ReportResult
