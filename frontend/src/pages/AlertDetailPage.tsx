@@ -24,6 +24,7 @@ import { fetchAlert, fetchTriage, investigateAlert } from "../api";
 import { EvidenceTrailCard } from "../components/EvidenceTrail";
 import { SeverityTag } from "../components/Tags";
 import { TriageCard, TriageEmpty } from "../components/TriageCard";
+import { CARD_STYLE, PAGE_GAP } from "../theme";
 
 const { Text, Title } = Typography;
 
@@ -77,8 +78,8 @@ export default function AlertDetailPage() {
   const l2 = triageRecords.filter((r) => r.stage === "investigation");
 
   return (
-    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-      <Card title="告警详情" extra={<Link to="/alerts">← 返回列表</Link>}>
+    <Space orientation="vertical" size={PAGE_GAP} style={{ width: "100%" }}>
+      <Card title="告警详情" extra={<Link to="/alerts" style={CARD_STYLE}>← 返回列表</Link>}>
         <Descriptions column={2} size="small" bordered>
           <Descriptions.Item label="签名" span={2}>
             {alert.signature}

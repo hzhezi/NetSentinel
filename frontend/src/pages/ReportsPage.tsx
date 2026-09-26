@@ -23,6 +23,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchDailyReport } from "../api";
 import { SeverityTag } from "../components/Tags";
+import { CARD_STYLE, PAGE_GAP } from "../theme";
 
 const { Text, Paragraph } = Typography;
 
@@ -55,7 +56,7 @@ export default function ReportsPage() {
   };
 
   return (
-    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size={PAGE_GAP} style={{ width: "100%" }}>
       <Card
         title={
           <Space>
@@ -177,7 +178,7 @@ export default function ReportsPage() {
         )}
       </Card>
 
-      <Card title="高频来源 IP" size="small">
+      <Card title="高频来源 IP" size="small" style={CARD_STYLE}>
         {stats.alerts.top_sources.length === 0 ? (
           <Text type="secondary">无数据</Text>
         ) : (

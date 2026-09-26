@@ -11,6 +11,7 @@ import { fetchAvailableFiles, startReplay } from "../api";
 
 const { Text } = Typography;
 import { useAlertStream } from "../store";
+import { CARD_STYLE, PAGE_GAP } from "../theme";
 
 export default function FeedPage() {
   const [form] = Form.useForm();
@@ -48,7 +49,7 @@ export default function FeedPage() {
   };
 
   return (
-    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size={PAGE_GAP} style={{ width: "100%" }}>
       <Card
         title="数据重放"
         extra={
@@ -90,7 +91,7 @@ export default function FeedPage() {
         </Form>
       </Card>
 
-      <Card title="手动指定路径" size="small">
+      <Card title="手动指定路径" size="small" style={CARD_STYLE}>
         <Form
           layout="inline"
           onFinish={(v) => onFinish({ eve_path: v.manual_path, speed: v.manual_speed })}

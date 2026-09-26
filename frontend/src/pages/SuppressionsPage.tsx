@@ -28,6 +28,7 @@ import {
   fetchSuppressions,
   type SuppressionRule,
 } from "../api";
+import { CARD_STYLE, PAGE_GAP } from "../theme";
 
 const { Text } = Typography;
 
@@ -101,7 +102,7 @@ export default function SuppressionsPage() {
   };
 
   return (
-    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size={PAGE_GAP} style={{ width: "100%" }}>
       <Alert
         type="info"
         showIcon
@@ -109,7 +110,7 @@ export default function SuppressionsPage() {
         description="命中规则的告警会被自动跳过：不落库、不做 AI 研判、不推送。适用于已知的预期流量（如内部漏洞扫描器、监控端口探测）。注意规则采用 AND 逻辑 —— 多个条件必须同时满足，只写源 IP 会抑制该 IP 的所有告警。"
       />
 
-      <Card title="新建规则">
+      <Card title="新建规则" style={CARD_STYLE}>
         <Form form={form} layout="inline" onFinish={onFinish}>
           <Form.Item name="name" rules={[{ required: true, message: "请填名称" }]}>
             <Input placeholder="规则名称（如：内部扫描器）" style={{ width: 200 }} />
