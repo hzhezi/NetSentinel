@@ -1,0 +1,5 @@
+# 项目级 uv 配置：覆盖全局 ~/.config/uv/uv.toml 里已失效的清华源。
+# 清华源当前返回 403，阿里云可用。放这里可随仓库共享，避免每个人各自踩坑。
+[[index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true

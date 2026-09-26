@@ -24,13 +24,30 @@ coverage/
 *.tsbuildinfo
 
 # ── Datasets & large artifacts (never commit) ──────────────────────
-data/
+# 数据本体不入库，但保留：
+#   - 各目录下的说明文档（数据来源、下载方式、格式陷阱）
+#   - **实验结果 JSON**（报告素材，体积小且需长期留存/可追溯）
+# git 的取消忽略规则要求父目录先不被排除，因此：
+#   1. data/*        排除内容物
+#   2. !data/*/      放行一级子目录
+#   3. 按**文件类型**排除真实数据（csv/parquet/pcap 等）
+#   4. 放行 README 与实验结果的 json
+data/*
+!data/*/
+*.csv
+*.parquet
+*.jsonl
+!data/**/README.md
+!data/**/experiment_*.json
 datasets/
 logs/
 artifacts/
 *.pcap
 *.pcapng
 *.pcap.gz
+
+# ── 本机特有笔记（含个人环境排查记录，不应共享）─────────────────────
+docs/dev-notes.local.md
 
 # ── Tooling ────────────────────────────────────────────────────────
 .codegraph/
