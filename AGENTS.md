@@ -52,6 +52,16 @@
 - **API-KEY 不进源码。**
 - **`.env` 不提交仓库**（必须写入 `.gitignore`）。
 - 提交 `.env.example` 作为模板：包含所有必需变量名，**不含实际值**。
+- **提交前必须扫描密钥**：本项目已装 `scripts/check_secrets.sh` 作为
+  pre-commit hook（安装：`./scripts/install_hooks.sh`）。
+  别用 `--no-verify` 绕过。
+- **密钥一旦曾被提交过，即使随后删除也必须重置** ——
+  删除文件不能撤销已发生的泄露（GitHub/爬虫可能已抓取）。
+
+> **真实事故记录**：开发过程中，真实的 `DEEPSEEK_API_KEY` 曾被误写进
+> `.env.example` 并推送，直到 GitHub push protection 拦截才发现，
+> 最终不得不重置该 key 并重写整个 git 历史。
+> 教训：不依赖"记得别提交密钥"的自觉，要把它变成机械检查。
 
 ### 1.7 代码注释
 - **写代码时带清晰注释**，尤其是"为什么这么做"而非"做了什么"。
