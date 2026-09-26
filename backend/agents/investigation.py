@@ -326,6 +326,9 @@ class InvestigationAgent:
             for s in trail
             if s.get("type") == "tool_call"
         ]
+        evidence_text = json.dumps(
+            evidence_summary, ensure_ascii=False, default=str
+        )[:4000]
         try:
             reply = self.llm.complete_text(
                 system=(
@@ -333,7 +336,7 @@ class InvestigationAgent:
                     "只输出 JSON 对象，不含任何其他文字。"
                 ),
                 user=(
-                    f"调查证据：\n{json.dumps(evidence_summary, ensure_ascii=False, default=str)[:4000]}\n\n"
+                    f"调查证据：\n{evidence_text}\n\n"
                     "请输出结论 JSON："
                     '{"verdict":"true_positive|false_positive|needs_human_review",'
                     '"severity":"critical|high|medium|low","confidence":0-100,'
