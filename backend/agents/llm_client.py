@@ -283,3 +283,7 @@ def _looks_like_verdict(content: str) -> bool:
         return False
     # 必须是 JSON 形态（含花括号），而不是叙述里恰好提到这个词
     return "{" in content and "}" in content
+
+    def complete_text(self, system: str, user: str) -> str:
+        """不带工具的简单文本补全（供 Agent 收尾逼问结论使用）。"""
+        return self._raw_call(system, user)

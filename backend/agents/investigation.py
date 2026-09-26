@@ -174,6 +174,23 @@ class InvestigationAgent:
         for iteration in range(1, self.max_iterations + 1):
             last_chance = iteration == self.max_iterations
 
+            # 最后一轮：在对话里显式要求收尾。
+            # 仅靠 tool_choice="none" 不够 —— 实测模型会在文本里
+            # "假装"调用工具（写出调用语句但不给结论），必须明确指令。
+            if last_chance:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "调查轮次已用完。请**立即**给出最终结论，"
+                            "只输出 JSON 对象，不要再调用任何工具，"
+                            "也不要输出其他文字。格式：\n"
+                            '{"verdict": "...", "severity": "...", "confidence": 0-100, '
+                            '"summary": "...", "mitre_techniques": [], "recommended_actions": []}'
+                        ),
+                    }
+                )
+
             try:
                 reply = self.llm.complete_with_tools(
                     messages, TOOL_SCHEMAS, force_final=last_chance
@@ -265,10 +282,17 @@ class InvestigationAgent:
         解析失败时降级为 needs_human_review —— 与分析失败同等处理，
         都保证"告警不丢、结论诚实"。
         """
+        payload = None
         try:
             payload = json.loads(self._extract_json(content))
         except (json.JSONDecodeError, TypeError) as exc:
-            result = _degraded_result(f"结论不是合法 JSON（{exc}）", iterations, started)
+            # 解析失败：先尝试一次"纯文本逼问"（不带工具，直接要 JSON）。
+            # 实测模型在工具轮次用尽后有时会输出叙述性文字而非 JSON，
+            # 一次干净的重新提问往往能拿到规范输出 —— 比直接降级更有价值。
+            payload = self._force_json_conclusion(trail, str(exc))
+
+        if payload is None:
+            result = _degraded_result("结论不是合法 JSON", iterations, started)
             result.evidence_trail = trail
             return result
 
@@ -287,6 +311,47 @@ class InvestigationAgent:
             latency_ms=int((time.monotonic() - started) * 1000),
             usage=usage,
         )
+
+    def _force_json_conclusion(
+        self, trail: list[dict[str, Any]], reason: str
+    ) -> dict[str, Any] | None:
+        """在解析失败后，用一次干净的纯文本请求逼出 JSON 结论。
+
+        构造一个新的最小对话（不带工具定义），把已收集的证据摘要带上，
+        明确要求只输出 JSON。成功返回 payload，失败返回 None（由调用方降级）。
+        """
+        # 从证据链里提取工具结果摘要 —— 让这次请求仍有依据
+        evidence_summary = [
+            {"tool": s.get("tool"), "result": s.get("result")}
+            for s in trail
+            if s.get("type") == "tool_call"
+        ]
+        try:
+            reply = self.llm.complete_text(
+                system=(
+                    "你是 SOC 分析师。基于给定的调查证据输出最终结论，"
+                    "只输出 JSON 对象，不含任何其他文字。"
+                ),
+                user=(
+                    f"调查证据：\n{json.dumps(evidence_summary, ensure_ascii=False, default=str)[:4000]}\n\n"
+                    "请输出结论 JSON："
+                    '{"verdict":"true_positive|false_positive|needs_human_review",'
+                    '"severity":"critical|high|medium|low","confidence":0-100,'
+                    '"summary":"2-3句中文","mitre_techniques":[],"recommended_actions":[]}'
+                ),
+            )
+            payload = json.loads(self._extract_json(reply))
+            trail.append(
+                {
+                    "type": "verdict",
+                    "input": payload,
+                    "note": f"首次解析失败（{reason}），经重新提问获得",
+                }
+            )
+            return payload
+        except Exception as exc:
+            log.warning("force_json_conclusion_failed", error=str(exc))
+            return None
 
     @staticmethod
     def _extract_json(text: str) -> str:

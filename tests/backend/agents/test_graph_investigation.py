@@ -10,8 +10,6 @@ Investigation Agent，本文件验证这次的接线正确。
     - 手动触发：即使 escalate=false 也能强制调查
 """
 
-
-
 from backend.agents.graph import build_triage_graph
 from backend.schemas.triage import TriageResult
 
