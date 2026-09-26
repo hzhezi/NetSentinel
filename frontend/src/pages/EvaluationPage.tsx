@@ -213,9 +213,9 @@ export default function EvaluationPage() {
   const l2 = data.results?.l2;
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Card>
-        <Space direction="vertical" size={4}>
+        <Space orientation="vertical" size={4}>
           <Title level={4} style={{ margin: 0 }}>
             LLM 研判评测结果
           </Title>

@@ -48,7 +48,7 @@ export default function FeedPage() {
   };
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Card
         title="数据重放"
         extra={

@@ -77,7 +77,7 @@ export default function AlertDetailPage() {
   const l2 = triageRecords.filter((r) => r.stage === "investigation");
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Card title="告警详情" extra={<Link to="/alerts">← 返回列表</Link>}>
         <Descriptions column={2} size="small" bordered>
           <Descriptions.Item label="签名" span={2}>
