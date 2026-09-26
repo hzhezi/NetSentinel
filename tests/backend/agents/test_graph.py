@@ -10,7 +10,6 @@
     4. 研判失败时降级为 needs_human_review 而非中断（安全系统关键性质）
 """
 
-
 from backend.agents.graph import build_triage_graph
 from backend.schemas.triage import TriageResult
 

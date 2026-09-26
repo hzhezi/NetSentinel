@@ -54,6 +54,11 @@ extend-exclude = ["alembic/versions"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI 的 Depends() 就是写在默认参数里的标准用法，
+# B008（不要在默认参数里调用函数）在这里是误报。
+"backend/api/**/*.py" = ["B008"]
+
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true

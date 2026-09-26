@@ -11,9 +11,11 @@
       不是失败。没有它，模型在拿不准时会"编"一个自信的答案。
 """
 
+import uuid
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # 三态而非二态 —— 这是关键设计。
 # 若只允许 true_positive / false_positive，模型在证据不足时会被迫二选一，
@@ -58,3 +60,38 @@ class TriageResult(BaseModel):
         default_factory=list,
         description="2-4 条具体处置建议",
     )
+
+
+# ── API 响应模型 ────────────────────────────────────────────────
+
+
+class TriageResultResponse(BaseModel):
+    """研判结果的 API 出参。
+
+    与 TriageResult（LLM 输出契约）分开：
+        TriageResult 是"要求模型输出什么"，
+        TriageResultResponse 是"系统返回给前端什么"（多带 id/耗时/tokens 等）。
+        两者字段相似但用途不同，合并会让改一边影响另一边。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    alert_id: uuid.UUID
+    stage: str
+    verdict: Verdict
+    severity: Severity
+    confidence: int
+    escalate: bool
+    attack_type: str | None = None
+    summary: str = ""
+    mitre_techniques: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
+    # 成本与性能（报告用）
+    model: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    latency_ms: int = 0
+    error: str | None = None
+    evidence_trail: list | None = None
+    created_at: datetime
