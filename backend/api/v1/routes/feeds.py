@@ -52,6 +52,15 @@ async def _replay_task(eve_path: Path, speed: float, max_delay: float | None) ->
     回调与具体推送方式绑定的地方（worker 本身不依赖 WebSocket）。
     """
     from backend.api.websocket.manager import ws_manager
+    from backend.repositories import suppression_repository as sup_repo
+    from backend.services.suppression import SuppressionService
+
+    # 加载抑制规则并注入重放流程 ——
+    # 每次重放开始前重新加载：保证"刚创建的规则立刻生效"，
+    # 避免用户改完规则却发现要等下次重启。
+    async with AsyncSessionLocal() as session:
+        rules = await sup_repo.load_domain_rules(session)
+    suppressions = SuppressionService(rules=rules)
 
     await run_replay(
         eve_path=eve_path,
@@ -59,6 +68,7 @@ async def _replay_task(eve_path: Path, speed: float, max_delay: float | None) ->
         max_delay=max_delay,
         session_factory=AsyncSessionLocal,
         on_alert=ws_manager.broadcast,
+        suppressions=suppressions,
     )
 
 

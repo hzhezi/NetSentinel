@@ -10,6 +10,13 @@
 
 from backend.models.alert import Alert
 from backend.models.base import TimestampMixin, UUIDMixin
+from backend.models.suppression import SuppressionRuleRow
 from backend.models.triage_result import TriageResultRow
 
-__all__ = ["Alert", "TimestampMixin", "TriageResultRow", "UUIDMixin"]
+__all__ = [
+    "Alert",
+    "SuppressionRuleRow",
+    "TimestampMixin",
+    "TriageResultRow",
+    "UUIDMixin",
+]
