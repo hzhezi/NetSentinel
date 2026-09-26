@@ -1,0 +1,95 @@
+{
+  "_comment": "本地 MITRE ATT&CK 技术映射表。用途：让 LLM 通过查表获得技术编号，而不是凭记忆编造。这是防幻觉的关键机制之一 —— LLM 编造 'T1110' 这类编号非常容易且看起来专业。",
+  "_note": "仅收录与本项目规则集相关的技术。真实项目可替换为完整 ATT&CK STIX 数据。",
+
+  "brute_force": {
+    "technique_id": "T1110",
+    "technique_name": "Brute Force",
+    "tactic": "Credential Access",
+    "description": "通过反复尝试猜测凭据来获得访问权限"
+  },
+  "ssh_brute_force": {
+    "technique_id": "T1110.001",
+    "technique_name": "Password Guessing",
+    "tactic": "Credential Access",
+    "description": "针对 SSH 等服务的密码猜测攻击"
+  },
+  "sql_injection": {
+    "technique_id": "T1190",
+    "technique_name": "Exploit Public-Facing Application",
+    "tactic": "Initial Access",
+    "description": "利用面向公众的应用漏洞（如 SQL 注入）获取初始访问"
+  },
+  "directory_traversal": {
+    "technique_id": "T1083",
+    "technique_name": "File and Directory Discovery",
+    "tactic": "Discovery",
+    "description": "枚举文件系统结构以寻找有价值的目标"
+  },
+  "port_scan": {
+    "technique_id": "T1046",
+    "technique_name": "Network Service Discovery",
+    "tactic": "Discovery",
+    "description": "扫描目标网络以发现开放服务与端口"
+  },
+  "network_scan": {
+    "technique_id": "T1046",
+    "technique_name": "Network Service Discovery",
+    "tactic": "Discovery",
+    "description": "扫描目标网络以发现开放服务与端口"
+  },
+  "os_detection": {
+    "technique_id": "T1046",
+    "technique_name": "Network Service Discovery",
+    "tactic": "Discovery",
+    "description": "探测目标操作系统类型（扫描的组成部分）"
+  },
+  "icmp_sweep": {
+    "technique_id": "T1018",
+    "technique_name": "Remote System Discovery",
+    "tactic": "Discovery",
+    "description": "通过 ICMP 探测发现存活主机"
+  },
+  "reverse_shell": {
+    "technique_id": "T1059",
+    "technique_name": "Command and Scripting Interpreter",
+    "tactic": "Execution",
+    "description": "通过命令解释器执行攻击者指令（反弹 shell 属此类）"
+  },
+  "dns_tunneling": {
+    "technique_id": "T1071.004",
+    "technique_name": "DNS",
+    "tactic": "Command and Control",
+    "description": "利用 DNS 协议进行命令控制或数据外传"
+  },
+  "xss": {
+    "technique_id": "T1059.007",
+    "technique_name": "JavaScript",
+    "tactic": "Execution",
+    "description": "注入并在受害者浏览器执行脚本"
+  },
+  "exploit_public_app": {
+    "technique_id": "T1190",
+    "technique_name": "Exploit Public-Facing Application",
+    "tactic": "Initial Access",
+    "description": "利用公开暴露应用的漏洞"
+  },
+  "log4shell": {
+    "technique_id": "T1190",
+    "technique_name": "Exploit Public-Facing Application",
+    "tactic": "Initial Access",
+    "description": "利用 Log4j JNDI 注入漏洞（CVE-2021-44228）"
+  },
+  "web_shell": {
+    "technique_id": "T1505.003",
+    "technique_name": "Web Shell",
+    "tactic": "Persistence",
+    "description": "在 Web 服务器上植入可远程执行的脚本"
+  },
+  "data_exfiltration": {
+    "technique_id": "T1041",
+    "technique_name": "Exfiltration Over C2 Channel",
+    "tactic": "Exfiltration",
+    "description": "通过既有命令控制通道外传数据"
+  }
+}

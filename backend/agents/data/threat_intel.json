@@ -1,0 +1,92 @@
+{
+  "_comment": "本地 IP 情报库（演示用）。真实项目应接入 AbuseIPDB / OTX 等服务。这里用本地数据的原因：演示不能因网络失败而中断。工具的签名与真实 API 保持一致，替换实现只需改 tools.py 一个文件。",
+  "_note": "IP 均为文档保留段（TEST-NET）或已知的公共 DNS，不代表真实威胁情报。",
+
+  "45.33.32.156": {
+    "reputation": "malicious",
+    "abuse_score": 87,
+    "country": "US",
+    "city": "Dallas",
+    "isp": "Linode LLC",
+    "categories": ["scanner", "brute-force"],
+    "note": "常见扫描与暴力破解来源，多个威胁情报源标记为恶意"
+  },
+  "198.51.100.23": {
+    "reputation": "suspicious",
+    "abuse_score": 55,
+    "country": "NL",
+    "city": "Amsterdam",
+    "isp": "Example Hosting BV",
+    "categories": ["scanner"],
+    "note": "有扫描历史，但也可能是合法的安全评估流量"
+  },
+  "203.0.113.77": {
+    "reputation": "unknown",
+    "abuse_score": 12,
+    "country": "DE",
+    "city": "Frankfurt",
+    "isp": "Example ISP GmbH",
+    "categories": [],
+    "note": "情报库中无明确记录"
+  },
+  "192.0.2.44": {
+    "reputation": "malicious",
+    "abuse_score": 92,
+    "country": "RU",
+    "city": "Moscow",
+    "isp": "Example Telecom",
+    "categories": ["c2", "malware"],
+    "note": "被标记为命令控制服务器"
+  },
+  "104.28.16.9": {
+    "reputation": "benign-infrastructure",
+    "abuse_score": 5,
+    "country": "US",
+    "city": "San Francisco",
+    "isp": "Cloudflare, Inc.",
+    "categories": ["cdn", "proxy"],
+    "note": "Cloudflare CDN 出口地址。攻击流量可能经由它转发 —— 真实攻击源不可见，需结合其他证据判断"
+  },
+  "185.220.101.5": {
+    "reputation": "suspicious",
+    "abuse_score": 68,
+    "country": "DE",
+    "city": "Unknown",
+    "isp": "Tor Exit Relay",
+    "categories": ["tor", "anonymizer"],
+    "note": "Tor 出口节点。匿名性高，源地址不具可追溯性"
+  },
+
+  "_internal_assets": {
+    "_comment": "内网资产库。用途：判断攻击目标的重要性，从而影响严重度判断。打在数据库服务器上的扫描，比打在打印机上的严重得多。",
+
+    "192.168.10.5": {
+      "type": "web-server",
+      "role": "对外 Web 应用服务器",
+      "criticality": "high",
+      "services": ["http", "https"],
+      "note": "承载主要业务系统，被攻陷影响面大"
+    },
+    "192.168.10.12": {
+      "type": "database-server",
+      "role": "PostgreSQL 数据库",
+      "criticality": "critical",
+      "services": ["postgresql"],
+      "note": "存储核心业务数据，最高优先级保护"
+    },
+    "192.168.10.19": {
+      "type": "dns-server",
+      "role": "内部 DNS 解析",
+      "criticality": "medium",
+      "services": ["dns"],
+      "note": "内网服务发现依赖它"
+    },
+    "192.168.10.100": {
+      "type": "workstation",
+      "role": "员工办公终端",
+      "criticality": "low",
+      "services": [],
+      "note": "普通办公设备"
+    }
+  }
+}
