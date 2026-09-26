@@ -326,9 +326,7 @@ class InvestigationAgent:
             for s in trail
             if s.get("type") == "tool_call"
         ]
-        evidence_text = json.dumps(
-            evidence_summary, ensure_ascii=False, default=str
-        )[:4000]
+        evidence_text = json.dumps(evidence_summary, ensure_ascii=False, default=str)[:4000]
         try:
             reply = self.llm.complete_text(
                 system=(

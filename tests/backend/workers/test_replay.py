@@ -257,3 +257,55 @@ async def test_replay_continues_after_single_failure(tmp_path, pg_session, sessi
     # 第一条失败，第二条仍应成功
     assert result["emitted"] == 1
     assert result["errors"] == 1
+
+
+# ── 抑制规则 ───────────────────────────────────────────────────
+
+
+async def test_replay_skips_suppressed_alerts(tmp_path, pg_session, session_factory):
+    """命中抑制规则的告警应被跳过（不落库、不回调）。"""
+    from backend.services.suppression import SuppressionRule, SuppressionService
+
+    eve = _eve_file(
+        tmp_path,
+        [
+            _alert("2017-07-05T10:00:00+0000", "SQL Injection"),
+            _alert("2017-07-05T10:00:01+0000", "ET SCAN Nmap", src="192.168.10.100"),
+        ],
+    )
+    # 抑制内部扫描器（按 src_ip + signature_id 精确匹配）
+    suppressions = SuppressionService(
+        rules=[
+            SuppressionRule(id=1, name="内部扫描器", src_ip="192.168.10.100", signature_id=1000002),
+        ]
+    )
+    received = []
+
+    async def on_alert(payload):
+        received.append(payload)
+
+    result = await run_replay(
+        eve_path=eve,
+        speed=1_000_000,
+        session_factory=session_factory,
+        on_alert=on_alert,
+        suppressions=suppressions,
+    )
+
+    assert result["emitted"] == 1
+    assert result["suppressed"] == 1
+    assert len(received) == 1
+    _, total = await repo.list_alerts(pg_session)
+    assert total == 1
+
+
+async def test_replay_without_suppressions_processes_all(tmp_path, pg_session, session_factory):
+    """未配置抑制时所有告警正常处理。"""
+    eve = _eve_file(tmp_path, [_alert("2017-07-05T10:00:00+0000", "A")])
+    result = await run_replay(
+        eve_path=eve,
+        speed=1_000_000,
+        session_factory=session_factory,
+    )
+    assert result["emitted"] == 1
+    assert result["suppressed"] == 0

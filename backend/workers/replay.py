@@ -41,6 +41,7 @@ import structlog
 from backend.detection.feeders.eve_feeder import EveFeeder
 from backend.repositories import alert_repository as repo
 from backend.services.alert_service import AlertPipeline, eve_to_raw, normalize_alert
+from backend.services.suppression import SuppressionService
 
 log = structlog.get_logger(__name__)
 
@@ -53,6 +54,7 @@ async def run_replay(
     session_factory: Callable[[], Any],
     on_alert: Callable[[dict], Awaitable[None]] | None = None,
     pipeline: AlertPipeline | None = None,
+    suppressions: SuppressionService | None = None,
 ) -> dict[str, int]:
     """重放 eve.json 并落库、可选推送。
 
@@ -63,6 +65,8 @@ async def run_replay(
         session_factory: 每次调用返回一个 async 上下文管理器（新 session）。
         on_alert: 可选回调，每条成功落库的告警调用一次。
         pipeline: 去重管道。不传则新建（TTL 默认 60 秒）。
+        suppressions: 抑制规则服务。命中已知噪声的告警会被跳过
+                      （不落库、不研判、不推送）—— 省存储也省 LLM 费用。
 
     Returns:
         {"emitted": 落库并回调的条数,
@@ -80,6 +84,7 @@ async def run_replay(
 
     emitted = 0
     deduplicated = 0
+    suppressed = 0
     errors = 0
 
     async for event in feeder.stream():
@@ -95,6 +100,27 @@ async def run_replay(
         ):
             deduplicated += 1
             continue
+
+        # 抑制：命中"已知噪声"规则则跳过。
+        # 放在去重之后 —— 去重是内存比较（更便宜），抑制涉及多字段匹配。
+        # 被抑制的告警不落库、不研判、不推送：省存储也省 LLM 费用。
+        if suppressions is not None:
+            hit = suppressions.match(
+                {
+                    "src_ip": alert_create.src_ip,
+                    "signature_id": event.signature_id,
+                    "category": alert_create.category,
+                }
+            )
+            if hit is not None:
+                suppressed += 1
+                log.debug(
+                    "alert_suppressed",
+                    rule=hit.name,
+                    signature=alert_create.signature,
+                    src_ip=alert_create.src_ip,
+                )
+                continue
 
         # 落库：每条独立 session/事务，见模块顶部说明
         try:
@@ -145,6 +171,12 @@ async def run_replay(
         eve_path=str(eve_path),
         emitted=emitted,
         deduplicated=deduplicated,
+        suppressed=suppressed,
         errors=errors,
     )
-    return {"emitted": emitted, "deduplicated": deduplicated, "errors": errors}
+    return {
+        "emitted": emitted,
+        "deduplicated": deduplicated,
+        "suppressed": suppressed,
+        "errors": errors,
+    }
