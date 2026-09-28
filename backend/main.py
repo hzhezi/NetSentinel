@@ -20,6 +20,7 @@ from backend.api.v1.routes import (
     reports,
     statistics,
     suppressions,
+    uploads,
 )
 from backend.api.websocket.handlers import router as ws_router
 from backend.core.config import settings
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(suppressions.router, prefix=f"{prefix}/suppressions", tags=["suppressions"])
     app.include_router(evaluation.router, prefix=f"{prefix}/evaluation", tags=["evaluation"])
     app.include_router(reports.router, prefix=f"{prefix}/reports", tags=["reports"])
+    app.include_router(uploads.router, prefix=f"{prefix}/uploads", tags=["uploads"])
     app.include_router(ws_router, tags=["websocket"])
 
     @app.get("/health", tags=["system"])
