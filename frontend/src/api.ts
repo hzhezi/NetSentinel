@@ -181,3 +181,34 @@ export const fetchDailyReport = async (hours = 24): Promise<DailyReport> => {
   });
   return data;
 };
+
+// ── pcap 上传 ─────────────────────────────────────────────────
+
+export interface UploadResult {
+  status: string;
+  message: string;
+  alerts_created: number;
+  deduplicated: number;
+  suppressed: number;
+  errors: number;
+}
+
+export interface UploadLimits {
+  max_mb: number;
+  allowed_extensions: string[];
+}
+
+export const fetchUploadLimits = async (): Promise<UploadLimits> => {
+  const { data } = await api.get<UploadLimits>("/uploads/limits");
+  return data;
+};
+
+/** 上传 pcap。检测 + 重放在后端同步完成，因此超时设长。 */
+export const uploadPcap = async (file: File): Promise<UploadResult> => {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<UploadResult>("/uploads/pcap", form, {
+    timeout: 300000, // 5 分钟：大 pcap 的 Suricata 处理可能较慢
+  });
+  return data;
+};
